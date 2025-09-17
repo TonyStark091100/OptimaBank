@@ -1,0 +1,5 @@
+[MESSAGES CONTROL]
+disable=
+    unused-argument
+load-plugins=pylint_django
+django-settings-module=your_project_name.settings
