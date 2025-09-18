@@ -30,7 +30,7 @@ import {
   Tab
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   voucherApi, 
   userApi, 
   cartApi, 
@@ -43,6 +43,8 @@ import {
   Cart,
   Notification
 } from '../services/api';
+import SettingsPage from './SettingsPage';
+import TierProgress from './TierProgress';
 import {
   Search as SearchIcon,
   Notifications as NotificationsIcon,
@@ -106,6 +108,7 @@ const HomePage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const [userName, setUserName] = useState<string>('User');
+  const [showSettingsPage, setShowSettingsPage] = useState(false);
 
   // API Data State
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -206,6 +209,15 @@ const HomePage: React.FC = () => {
   const handleLogout = () => {
     handleProfileMenuClose();
     setLogoutConfirmOpen(true);
+  };
+
+  const handleSettings = () => {
+    handleProfileMenuClose();
+    setShowSettingsPage(true);
+  };
+
+  const handleBackFromSettings = () => {
+    setShowSettingsPage(false);
   };
 
   const handleTermsOpen = (voucher: any) => {
@@ -364,7 +376,7 @@ const HomePage: React.FC = () => {
       <Box
         sx={{
           minHeight: '100vh',
-          background: '#0A0A14',
+          background: 'linear-gradient(135deg, #0A0A14 0%, #1A102E 100%)',
           color: 'white',
           display: 'flex',
           alignItems: 'center',
@@ -385,7 +397,7 @@ const HomePage: React.FC = () => {
       <Box
         sx={{
           minHeight: '100vh',
-          background: '#0A0A14',
+          background: 'linear-gradient(135deg, #0A0A14 0%, #1A102E 100%)',
           color: 'white',
           display: 'flex',
           alignItems: 'center',
@@ -415,11 +427,16 @@ const HomePage: React.FC = () => {
     );
   }
 
+  // Show Settings page if requested
+  if (showSettingsPage) {
+    return <SettingsPage onBack={handleBackFromSettings} />;
+  }
+
   return (
     <Box
       sx={{
         minHeight: '100vh',
-        background: '#0A0A14',
+        background: 'linear-gradient(135deg, #0A0A14 0%, #1A102E 100%)',
         color: 'white',
         overflow: 'hidden',
         fontFamily: '"Inter", "Roboto", sans-serif'
@@ -747,7 +764,7 @@ const HomePage: React.FC = () => {
               </MenuItem>
               <Divider sx={{ bgcolor: 'rgba(162, 89, 255, 0.3)' }} />
               <MenuItem onClick={handleEditProfile}><EditIcon sx={{ mr: 2, color: '#A259FF', fontSize: 20 }} />Edit Profile</MenuItem>
-              <MenuItem onClick={handleProfileMenuClose}><SettingsIcon sx={{ mr: 2, color: '#A259FF', fontSize: 20 }} />Settings</MenuItem>
+              <MenuItem onClick={handleSettings}><SettingsIcon sx={{ mr: 2, color: '#A259FF', fontSize: 20 }} />Settings</MenuItem>
               <Divider sx={{ bgcolor: 'rgba(162, 89, 255, 0.3)' }} />
               <MenuItem onClick={handleLogout}><LogoutIcon sx={{ mr: 2, color: '#A259FF', fontSize: 20 }} />Logout</MenuItem>
             </Menu>
@@ -849,6 +866,12 @@ const HomePage: React.FC = () => {
 
       {/* Main Content */}
       <Container maxWidth="xl" sx={{ py: 4 }}>
+        {/* Tier Progress Component */}
+        <TierProgress onTierUpgrade={(newTier) => {
+          setSnackbarMessage(`🎉 Congratulations! You've been upgraded to ${newTier.tier_name.charAt(0).toUpperCase() + newTier.tier_name.slice(1)} tier!`);
+          setSnackbarOpen(true);
+        }} />
+        
         {/* Hero Banner with New Arrivals */}
         <Paper sx={{ 
           position: 'relative', 

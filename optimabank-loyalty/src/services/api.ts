@@ -47,9 +47,11 @@ export interface VoucherCategory {
 
 // User interfaces
 export interface UserProfile {
-  id: number;
+  id: string;
   username: string;
   email: string;
+  first_name: string;
+  last_name: string;
   points: number;
   created_at: string;
 }
@@ -98,6 +100,30 @@ export interface Notification {
   message: string;
   read: boolean;
   created_at: string;
+}
+
+// Chatbot interfaces
+export interface ChatMessage {
+  id: string;
+  message_type: 'user' | 'bot' | 'system';
+  content: string;
+  timestamp: string;
+  is_read: boolean;
+}
+
+export interface ChatSession {
+  id: string;
+  session_id: string;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+  messages: ChatMessage[];
+}
+
+export interface ChatResponse {
+  session_id: string;
+  user_message: ChatMessage;
+  bot_message: ChatMessage;
 }
 
 // API Functions
@@ -428,6 +454,327 @@ export const downloadPdf = (pdfUrl: string, filename: string = 'voucher.pdf') =>
   document.body.removeChild(link);
 };
 
+// Tiered Rewards System Interfaces
+export interface RewardTier {
+  id: number;
+  tier_name: string;
+  tier_level: number;
+  min_points: number;
+  color: string;
+  icon: string;
+  benefits: string[];
+  exclusive_offers: boolean;
+  premium_support: boolean;
+  created_at: string;
+}
+
+export interface TierBenefit {
+  id: number;
+  benefit_name: string;
+  description: string;
+  benefit_type: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface UserTier {
+  id: number;
+  current_tier: RewardTier;
+  total_points_earned: number;
+  tier_points: number;
+  tier_start_date: string;
+  last_tier_upgrade: string | null;
+  tier_progress: number;
+  points_to_next_tier: number;
+  next_tier: RewardTier | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TierActivity {
+  id: number;
+  activity_type: string;
+  points_earned: number;
+  description: string;
+  created_at: string;
+}
+
+export interface TierProgressData {
+  current_tier: RewardTier;
+  next_tier: RewardTier | null;
+  progress_percentage: number;
+  points_to_next_tier: number;
+  total_points_earned: number;
+  tier_benefits: TierBenefit[];
+  tier_points: number;
+  tier_start_date: string;
+  last_tier_upgrade: string | null;
+}
+
+// Tiered Rewards APIs
+export const tierApi = {
+  // Get all available tiers
+  getAllTiers: async (): Promise<RewardTier[]> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/tiers/`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get tiers');
+    }
+    
+    return data;
+  },
+
+  // Get user's current tier information
+  getUserTierInfo: async (): Promise<TierProgressData> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/tiers/user/`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get user tier info');
+    }
+    
+    return data;
+  },
+
+  // Get benefits for a specific tier
+  getTierBenefits: async (tierId: number): Promise<TierBenefit[]> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/tiers/${tierId}/benefits/`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get tier benefits');
+    }
+    
+    return data;
+  },
+
+  // Get user's tier activities
+  getUserActivities: async (): Promise<TierActivity[]> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/tiers/activities/`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get user activities');
+    }
+    
+    return data;
+  },
+
+  // Add a new tier activity
+  addTierActivity: async (activityData: {
+    activity_type: string;
+    points_earned: number;
+    description: string;
+  }): Promise<TierActivity> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/tiers/activities/add/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(activityData),
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to add tier activity');
+    }
+    
+    return data;
+  },
+
+  // Simulate daily login activity
+  simulateLoginActivity: async (): Promise<{
+    activity: TierActivity;
+    tier_info: UserTier;
+    message: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/tiers/login-bonus/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to claim login bonus');
+    }
+    
+    return data;
+  },
+};
+
+// Chatbot APIs
+export const chatbotApi = {
+  // Start a new chat session
+  startChat: async (): Promise<ChatSession> => {
+    const response = await fetch(`${API_BASE_URL}/chatbot/start/`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to start chat session');
+    }
+    
+    return response.json();
+  },
+
+  // Send a message to the chatbot
+  sendMessage: async (message: string, sessionId?: string): Promise<ChatResponse> => {
+    const response = await fetch(`${API_BASE_URL}/chatbot/send/`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ message, session_id: sessionId }),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to send message');
+    }
+    
+    return response.json();
+  },
+
+  // Get chat history for a session
+  getChatHistory: async (sessionId: string): Promise<ChatSession> => {
+    const response = await fetch(`${API_BASE_URL}/chatbot/sessions/${sessionId}/`, {
+      headers: getAuthHeaders(),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to get chat history');
+    }
+    
+    return response.json();
+  },
+
+  // Get all user chat sessions
+  getUserSessions: async (): Promise<ChatSession[]> => {
+    const response = await fetch(`${API_BASE_URL}/chatbot/sessions/`, {
+      headers: getAuthHeaders(),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to get user sessions');
+    }
+    
+    return response.json();
+  },
+
+  // End a chat session
+  endChat: async (sessionId: string): Promise<{ message: string }> => {
+    const response = await fetch(`${API_BASE_URL}/chatbot/sessions/${sessionId}/end/`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to end chat session');
+    }
+    
+    return response.json();
+  },
+};
+
+// Real-time Analytics Interfaces
+export interface RealtimeChartData {
+  hour: string;
+  users: number;
+  timestamp: string;
+}
+
+export interface RealtimeMetrics {
+  total_users: number;
+  active_today: number;
+  recent_activities: number;
+  tier_distribution: { [key: string]: number };
+  server_time: string;
+  uptime_hours: number;
+}
+
+export interface LiveUserCount {
+  active_users: number;
+  total_users: number;
+  online_users: number;
+  timestamp: string;
+}
+
+// Real-time Analytics APIs
+export const analyticsApi = {
+  // Get real-time analytics data
+  getRealtimeAnalytics: async (): Promise<{
+    chart_data: RealtimeChartData[];
+    metrics: RealtimeMetrics;
+    status: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/analytics/realtime/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get real-time analytics');
+    }
+    
+    return data;
+  },
+
+  // Get live user count
+  getLiveUserCount: async (): Promise<LiveUserCount> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/analytics/live-users/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get live user count');
+    }
+    
+    return data;
+  },
+};
+
 const apiService = {
   voucherApi,
   userApi,
@@ -435,6 +782,9 @@ const apiService = {
   redemptionApi,
   notificationApi,
   authApi,
+  chatbotApi,
+  tierApi,
+  analyticsApi,
   downloadPdf,
 };
 

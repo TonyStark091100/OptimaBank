@@ -147,7 +147,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
 
       // store locally (demo); in production send this to backend
       localStorage.setItem("biometricEnabled", "true");
-      localStorage.setItem("biometricCredentialId", credIdBase64);
+      localStorage.setItem("biometricCredId", credIdBase64);
       localStorage.setItem("biometricChoiceMade", "true");
 
       // notify parent (App.tsx) that biometric has been enabled (parent may also have its own logic)

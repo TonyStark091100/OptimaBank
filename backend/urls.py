@@ -23,6 +23,7 @@ urlpatterns = [
     path("auth/", include("rest_framework_social_oauth2.urls")),
     path("users/", include("users.urls")),
     path("accounts/", include("accounts.urls")),
+    path("chatbot/", include("chatbot.urls")),
     path("", RedirectView.as_view(url="/accounts/")),
 ]
 

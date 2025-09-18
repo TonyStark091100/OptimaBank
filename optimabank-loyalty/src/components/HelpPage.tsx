@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Box,
   Typography,
@@ -18,11 +18,13 @@ import ContactSupportIcon from "@mui/icons-material/ContactSupport";
 import EmailIcon from "@mui/icons-material/Email";
 import PhoneIcon from "@mui/icons-material/Phone";
 import ChatIcon from "@mui/icons-material/Chat";
+import Chatbot from "./Chatbot";
 
 const HelpPage: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down("md"));
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
 
   const faqItems = [
     {
@@ -199,10 +201,13 @@ const HelpPage: React.FC = () => {
           <Button
             variant="contained"
             startIcon={<ChatIcon />}
+            onClick={() => setIsChatbotOpen(true)}
             sx={{
-              backgroundColor: "#A259FF",
+              background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
+              borderRadius: 3,
+              fontWeight: 600,
               "&:hover": {
-                backgroundColor: "#8a3ffb",
+                background: 'linear-gradient(45deg, #9147e6 30%, #7a36d9 90%)',
               }
             }}
           >
@@ -210,6 +215,12 @@ const HelpPage: React.FC = () => {
           </Button>
         </Box>
       </Paper>
+      
+      {/* Chatbot Component */}
+      <Chatbot 
+        isOpen={isChatbotOpen} 
+        onClose={() => setIsChatbotOpen(false)} 
+      />
     </Box>
   );
 };

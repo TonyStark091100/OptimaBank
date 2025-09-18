@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "rest_framework_social_oauth2",
     # Your apps
     "accounts",
+    "chatbot",
 ]
 
 MIDDLEWARE = [
@@ -191,8 +192,6 @@ CORS_ALLOW_CREDENTIALS = True
 AUTHENTICATION_BACKENDS = (
     # Google OAuth2
     "social_core.backends.google.GoogleOAuth2",
-    # Django REST Framework social auth
-    "rest_framework_social_oauth2.backends.DjangoOAuth2",
     # Django default authentication
     "django.contrib.auth.backends.ModelBackend",
 )

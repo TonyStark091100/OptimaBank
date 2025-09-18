@@ -30,4 +30,16 @@ urlpatterns = [
     # Notification endpoints
     path("notifications/", views.notification_list, name="notification_list"),
     path("notifications/mark-read/", views.mark_notifications_read, name="mark_notifications_read"),
+    
+    # Tiered Rewards System endpoints
+    path("tiers/", views.get_all_tiers, name="get_all_tiers"),
+    path("tiers/user/", views.get_user_tier_info, name="get_user_tier_info"),
+    path("tiers/<int:tier_id>/benefits/", views.get_tier_benefits, name="get_tier_benefits"),
+    path("tiers/activities/", views.get_user_activities, name="get_user_activities"),
+    path("tiers/activities/add/", views.add_tier_activity, name="add_tier_activity"),
+    path("tiers/login-bonus/", views.simulate_login_activity, name="simulate_login_activity"),
+    
+    # Real-time Analytics endpoints
+    path("analytics/realtime/", views.get_realtime_analytics, name="get_realtime_analytics"),
+    path("analytics/live-users/", views.get_live_user_count, name="get_live_user_count"),
 ]

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biometric Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #0A0A14 0%, #1A102E 100%);
+            color: white;
+        }
+        .test-section {
+            background: rgba(34,34,50,0.98);
+            border: 1px solid rgba(162, 89, 255, 0.3);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success { background: rgba(76, 175, 80, 0.2); border: 1px solid #4caf50; }
+        .error { background: rgba(244, 67, 54, 0.2); border: 1px solid #f44336; }
+        .warning { background: rgba(255, 193, 7, 0.2); border: 1px solid #ffc107; }
+        button {
+            background: linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: linear-gradient(45deg, #9147e6 30%, #7a36d9 90%);
+        }
+        button:disabled {
+            background: rgba(162, 89, 255, 0.3);
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔐 Biometric Authentication Test</h1>
+    
+    <div class="test-section">
+        <h2>Device Detection</h2>
+        <div id="device-info"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>WebAuthn Support</h2>
+        <div id="webauthn-info"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Biometric Registration Test</h2>
+        <button id="register-btn" onclick="testBiometricRegistration()">Test Biometric Registration</button>
+        <div id="registration-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Biometric Authentication Test</h2>
+        <button id="auth-btn" onclick="testBiometricAuth()" disabled>Test Biometric Authentication</button>
+        <div id="auth-result"></div>
+    </div>
+
+    <script>
+        // Device detection logic (same as LoginPage)
+        function detectMobileDevice() {
+            const userAgent = navigator.userAgent || navigator.vendor || "";
+            const mobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+            return mobile;
+        }
+
+        // WebAuthn support check (same as LoginPage)
+        function checkWebAuthnSupport() {
+            return !!(window.PublicKeyCredential && typeof window.PublicKeyCredential === "function");
+        }
+
+        // Display device information
+        function displayDeviceInfo() {
+            const isMobile = detectMobileDevice();
+            const userAgent = navigator.userAgent;
+            const platform = navigator.platform;
+            
+            const deviceInfo = document.getElementById('device-info');
+            deviceInfo.innerHTML = `
+                <div class="status ${isMobile ? 'success' : 'warning'}">
+                    <strong>Mobile Device:</strong> ${isMobile ? 'Yes' : 'No'}
+                </div>
+                <div class="status">
+                    <strong>User Agent:</strong> ${userAgent}
+                </div>
+                <div class="status">
+                    <strong>Platform:</strong> ${platform}
+                </div>
+            `;
+        }
+
+        // Display WebAuthn support
+        function displayWebAuthnInfo() {
+            const supported = checkWebAuthnSupport();
+            const webauthnInfo = document.getElementById('webauthn-info');
+            
+            webauthnInfo.innerHTML = `
+                <div class="status ${supported ? 'success' : 'error'}">
+                    <strong>WebAuthn Support:</strong> ${supported ? 'Yes' : 'No'}
+                </div>
+                <div class="status">
+                    <strong>PublicKeyCredential:</strong> ${window.PublicKeyCredential ? 'Available' : 'Not Available'}
+                </div>
+                <div class="status">
+                    <strong>Navigator Credentials:</strong> ${navigator.credentials ? 'Available' : 'Not Available'}
+                </div>
+            `;
+        }
+
+        // Test biometric registration
+        async function testBiometricRegistration() {
+            const resultDiv = document.getElementById('registration-result');
+            const registerBtn = document.getElementById('register-btn');
+            
+            registerBtn.disabled = true;
+            registerBtn.textContent = 'Testing...';
+            
+            try {
+                if (!window.PublicKeyCredential) {
+                    throw new Error("WebAuthn not supported");
+                }
+
+                const challenge = new Uint8Array(32);
+                window.crypto.getRandomValues(challenge);
+
+                const publicKey = {
+                    challenge,
+                    rp: { name: "Optima Rewards Test" },
+                    user: {
+                        id: new TextEncoder().encode("test-user-123"),
+                        name: "test@example.com",
+                        displayName: "Test User",
+                    },
+                    pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+                    authenticatorSelection: {
+                        authenticatorAttachment: "platform",
+                        userVerification: "required",
+                    },
+                    timeout: 60000,
+                    attestation: "none",
+                };
+
+                const credential = await navigator.credentials.create({
+                    publicKey,
+                });
+
+                if (credential) {
+                    const rawId = new Uint8Array(credential.rawId);
+                    const rawIdString = String.fromCharCode.apply(null, Array.from(rawId));
+                    const credId = btoa(rawIdString);
+                    
+                    localStorage.setItem("testBiometricCredId", credId);
+                    
+                    resultDiv.innerHTML = `
+                        <div class="status success">
+                            <strong>✅ Registration Successful!</strong><br>
+                            Credential ID: ${credId.substring(0, 20)}...
+                        </div>
+                    `;
+                    
+                    document.getElementById('auth-btn').disabled = false;
+                } else {
+                    throw new Error("Registration was cancelled");
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `
+                    <div class="status error">
+                        <strong>❌ Registration Failed:</strong><br>
+                        ${err.message}
+                    </div>
+                `;
+            } finally {
+                registerBtn.disabled = false;
+                registerBtn.textContent = 'Test Biometric Registration';
+            }
+        }
+
+        // Test biometric authentication
+        async function testBiometricAuth() {
+            const resultDiv = document.getElementById('auth-result');
+            const authBtn = document.getElementById('auth-btn');
+            
+            authBtn.disabled = true;
+            authBtn.textContent = 'Testing...';
+            
+            try {
+                const credId = localStorage.getItem("testBiometricCredId");
+                if (!credId) {
+                    throw new Error("No credential found. Please register first.");
+                }
+
+                const idBytes = Uint8Array.from(atob(credId), (c) => c.charCodeAt(0));
+                const challenge = new Uint8Array(32);
+                window.crypto.getRandomValues(challenge);
+
+                const publicKey = {
+                    challenge,
+                    allowCredentials: [
+                        {
+                            id: idBytes,
+                            type: "public-key",
+                        },
+                    ],
+                    timeout: 60000,
+                    userVerification: "required",
+                };
+
+                const assertion = await navigator.credentials.get({
+                    publicKey,
+                });
+
+                if (assertion) {
+                    resultDiv.innerHTML = `
+                        <div class="status success">
+                            <strong>✅ Authentication Successful!</strong><br>
+                            Biometric authentication is working properly.
+                        </div>
+                    `;
+                } else {
+                    throw new Error("Authentication was cancelled");
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `
+                    <div class="status error">
+                        <strong>❌ Authentication Failed:</strong><br>
+                        ${err.message}
+                    </div>
+                `;
+            } finally {
+                authBtn.disabled = false;
+                authBtn.textContent = 'Test Biometric Authentication';
+            }
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            displayDeviceInfo();
+            displayWebAuthnInfo();
+            
+            // Check if we already have a credential
+            const existingCred = localStorage.getItem("testBiometricCredId");
+            if (existingCred) {
+                document.getElementById('auth-btn').disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
