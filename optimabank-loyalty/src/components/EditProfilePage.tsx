@@ -36,28 +36,70 @@ const EditProfilePage: React.FC = () => {
     address: ''
   });
 
-  // Load user data from localStorage on component mount
+  // Load user data from API on component mount
   useEffect(() => {
-    try {
-      const storedName = localStorage.getItem('userName') || '';
-      const storedEmail = localStorage.getItem('userEmail') || '';
-      
-      // Parse the stored name to get first and last name
-      const nameParts = storedName.split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || '';
-      
-      setUserData(prev => ({
-        ...prev,
-        firstName,
-        lastName,
-        email: storedEmail,
-        phone: prev.phone || '+1 (555) 123-4567', // Keep default if not set
-        address: prev.address || '123 Main Street, City, State 12345' // Keep default if not set
-      }));
-    } catch (error) {
-      console.error('Error loading user data:', error);
-    }
+    const loadUserData = async () => {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+          const response = await fetch('http://localhost:8000/accounts/profile/', {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+          
+          if (response.ok) {
+            const profileData = await response.json();
+            setUserData({
+              firstName: profileData.first_name || '',
+              lastName: profileData.last_name || '',
+              email: profileData.email || '',
+              phone: profileData.phone_number || '',
+              address: profileData.address || ''
+            });
+          } else {
+            // Fallback to localStorage if API fails
+            const storedName = localStorage.getItem('userName') || '';
+            const storedEmail = localStorage.getItem('userEmail') || '';
+            
+            const nameParts = storedName.split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+            
+            setUserData(prev => ({
+              ...prev,
+              firstName,
+              lastName,
+              email: storedEmail,
+              phone: prev.phone || '',
+              address: prev.address || ''
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading user data:', error);
+        // Fallback to localStorage
+        const storedName = localStorage.getItem('userName') || '';
+        const storedEmail = localStorage.getItem('userEmail') || '';
+        
+        const nameParts = storedName.split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        
+        setUserData(prev => ({
+          ...prev,
+          firstName,
+          lastName,
+          email: storedEmail,
+          phone: prev.phone || '',
+          address: prev.address || ''
+        }));
+      }
+    };
+    
+    loadUserData();
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,7 +107,7 @@ const EditProfilePage: React.FC = () => {
     setUserData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     try {
       // Update localStorage with the new user data
       const fullName = `${userData.firstName} ${userData.lastName}`.trim();
@@ -76,7 +118,35 @@ const EditProfilePage: React.FC = () => {
         localStorage.setItem('userEmail', userData.email);
       }
       
-      // In real use-case, send updated data to API here
+      // Update backend user profile
+      try {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+          const response = await fetch('http://localhost:8000/accounts/profile/', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              first_name: userData.firstName,
+              last_name: userData.lastName,
+              phone_number: userData.phone,
+              address: userData.address,
+            }),
+          });
+          
+          if (response.ok) {
+            const updatedProfile = await response.json();
+            console.log('Profile updated successfully:', updatedProfile);
+          } else {
+            console.warn('Failed to update profile on backend, but local changes saved');
+          }
+        }
+      } catch (apiError) {
+        console.warn('API update failed, but local changes saved:', apiError);
+      }
+      
       alert('Profile updated successfully!');
       navigate(-1); // Go back after save
     } catch (error) {
@@ -146,9 +216,20 @@ const EditProfilePage: React.FC = () => {
         >
           <Typography
             variant="h4"
-            sx={{ color: 'white', fontWeight: 'bold', mb: 3, textAlign: 'center' }}
+            sx={{ color: 'white', fontWeight: 'bold', mb: 2, textAlign: 'center' }}
           >
             Edit Profile
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{ 
+              color: 'rgba(255, 255, 255, 0.7)', 
+              textAlign: 'center', 
+              mb: 3,
+              fontStyle: 'italic'
+            }}
+          >
+            You can edit your name, phone number, and address. Email cannot be changed as it's used for authentication.
           </Typography>
 
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 4 }}>
@@ -233,26 +314,32 @@ const EditProfilePage: React.FC = () => {
               name="email"
               type="email"
               value={userData.email}
-              onChange={handleInputChange}
+              disabled
+              helperText="Email cannot be changed as it's used for account authentication"
               sx={{ 
                 mb: 3,
                 '& .MuiOutlinedInput-root': {
-                  color: 'white',
+                  color: 'rgba(255, 255, 255, 0.6)',
                   '& fieldset': {
-                    borderColor: 'rgba(162, 89, 255, 0.3)',
+                    borderColor: 'rgba(162, 89, 255, 0.2)',
                   },
                   '&:hover fieldset': {
-                    borderColor: 'rgba(162, 89, 255, 0.5)',
+                    borderColor: 'rgba(162, 89, 255, 0.2)',
                   },
                   '&.Mui-focused fieldset': {
-                    borderColor: '#A259FF',
+                    borderColor: 'rgba(162, 89, 255, 0.2)',
                   },
                 },
                 '& .MuiInputLabel-root': {
-                  color: 'rgba(255, 255, 255, 0.7)',
+                  color: 'rgba(255, 255, 255, 0.5)',
                   '&.Mui-focused': {
-                    color: '#A259FF',
+                    color: 'rgba(255, 255, 255, 0.5)',
                   },
+                },
+                '& .MuiFormHelperText-root': {
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  fontSize: '0.75rem',
+                  mt: 1,
                 },
               }}
             />

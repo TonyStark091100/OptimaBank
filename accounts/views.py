@@ -2,6 +2,7 @@
 Accounts views for voucher management, cart operations, and redemptions.
 """
 import os
+import requests
 from io import BytesIO
 
 from django.conf import settings
@@ -14,6 +15,14 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+from reportlab.lib.colors import HexColor, black, white
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics import renderPDF
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -58,16 +67,17 @@ def login(request):
         status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        # For demo purposes, accept any email/password combination
-        # In production, you'd validate credentials properly
-        user, _ = CustomUser.objects.get_or_create(
-            email=email,
-            defaults={
-                'first_name': email.split('@')[0],
-                'last_name': 'User',
-                'phone_number': '+1234567890'
-            }
-        )
+        # Try to authenticate the user
+        user = CustomUser.objects.filter(email=email).first()
+        
+        if not user:
+            return Response({'error': 'Invalid email or password'}, 
+                          status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Check password properly
+        if not user.check_password(password):
+            return Response({'error': 'Invalid email or password'}, 
+                          status=status.HTTP_401_UNAUTHORIZED)
 
         # Create user profile if it doesn't exist
         profile, _ = UserProfile.objects.get_or_create(
@@ -241,21 +251,64 @@ def category_list(request):
     return Response(data)
 
 # User Profile
-@api_view(['GET'])
+@api_view(['GET', 'PUT'])
 @permission_classes([IsAuthenticated])
 def user_profile(request):
-    """Get user profile with points"""
+    """Get or update user profile with points"""
     try:
-        profile = get_user_profile(request.user)
-        return Response({
-            'id': request.user.id,
-            'username': request.user.email,
-            'email': request.user.email,
-            'first_name': request.user.first_name,
-            'last_name': request.user.last_name,
-            'points': profile.points,
-            'created_at': request.user.date_joined.isoformat()
-        })
+        if request.method == 'GET':
+            profile = get_user_profile(request.user)
+            return Response({
+                'id': request.user.id,
+                'username': request.user.email,
+                'email': request.user.email,
+                'first_name': request.user.first_name,
+                'last_name': request.user.last_name,
+                'phone_number': request.user.phone_number,
+                'address': request.user.address,
+                'points': profile.points,
+                'created_at': request.user.date_joined.isoformat()
+            })
+        
+        elif request.method == 'PUT':
+            # Update user profile
+            user = request.user
+            data = request.data
+            
+            # Update user fields
+            if 'first_name' in data and data['first_name']:
+                user.first_name = data['first_name']
+            if 'last_name' in data and data['last_name']:
+                user.last_name = data['last_name']
+            if 'email' in data and data['email']:
+                # Email cannot be changed as it's used for authentication
+                if data['email'] != user.email:
+                    return Response({'error': 'Email cannot be changed as it\'s used for account authentication'}, 
+                                  status=status.HTTP_400_BAD_REQUEST)
+            if 'phone_number' in data and data['phone_number']:
+                user.phone_number = data['phone_number']
+            if 'address' in data:
+                user.address = data['address']
+            
+            try:
+                user.save()
+                
+                profile = get_user_profile(user)
+                return Response({
+                    'id': user.id,
+                    'username': user.email,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'phone_number': user.phone_number,
+                    'address': user.address,
+                    'points': profile.points,
+                    'created_at': user.date_joined.isoformat()
+                })
+            except Exception as e:
+                return Response({'error': f'Failed to update profile: {str(e)}'}, 
+                              status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -568,64 +621,306 @@ def mark_notifications_read(request):
 
 # PDF Generation
 def generate_voucher_pdf(redemption):
-    """Generate PDF for voucher redemption"""
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
-    _, height = letter
+    """Generate professional PDF for voucher redemption"""
+    try:
+        # Try platypus approach first, fallback to canvas if needed
+        return generate_voucher_pdf_platypus(redemption)
+    except Exception as e:
+        print(f"Platypus PDF generation failed: {e}")
+        print("Falling back to canvas method...")
+        return generate_voucher_pdf_canvas(redemption)
 
-    # Title
-    p.setFont("Helvetica-Bold", 24)
-    p.drawString(100, height - 100, "OPTIMA REWARDS")
+def generate_voucher_pdf_platypus(redemption):
+    """Generate PDF using platypus for better layout"""
+    try:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, 
+                              rightMargin=72, leftMargin=72, 
+                              topMargin=72, bottomMargin=18)
+        
+        # Define custom styles
+        styles = getSampleStyleSheet()
+        
+        # Custom styles for professional look
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=28,
+            spaceAfter=30,
+            alignment=TA_CENTER,
+            textColor=HexColor('#2E86AB'),
+            fontName='Helvetica-Bold'
+        )
+        
+        voucher_title_style = ParagraphStyle(
+            'VoucherTitle',
+            parent=styles['Heading2'],
+            fontSize=20,
+            spaceAfter=20,
+            alignment=TA_CENTER,
+            textColor=HexColor('#A23B72'),
+            fontName='Helvetica-Bold'
+        )
+        
+        coupon_style = ParagraphStyle(
+            'CouponCode',
+            parent=styles['Normal'],
+            fontSize=16,
+            spaceAfter=15,
+            alignment=TA_CENTER,
+            textColor=HexColor('#F18F01'),
+            fontName='Helvetica-Bold',
+            backColor=HexColor('#FFF8E1'),
+            borderWidth=2,
+            borderColor=HexColor('#F18F01'),
+            borderPadding=10
+        )
+        
+        section_style = ParagraphStyle(
+            'Section',
+            parent=styles['Heading3'],
+            fontSize=14,
+            spaceAfter=10,
+            spaceBefore=15,
+            textColor=HexColor('#2E86AB'),
+            fontName='Helvetica-Bold'
+        )
+        
+        detail_style = ParagraphStyle(
+            'Detail',
+            parent=styles['Normal'],
+            fontSize=11,
+            spaceAfter=5,
+            textColor=HexColor('#333333'),
+            fontName='Helvetica'
+        )
+        
+        terms_style = ParagraphStyle(
+            'Terms',
+            parent=styles['Normal'],
+            fontSize=9,
+            spaceAfter=5,
+            textColor=HexColor('#666666'),
+            fontName='Helvetica',
+            leftIndent=20
+        )
 
-    # Voucher Title
-    p.setFont("Helvetica-Bold", 18)
-    p.drawString(100, height - 150, redemption.voucher.title)
+        # Build the story (content)
+        story = []
+        
+        # Header with company branding
+        story.append(Paragraph("OPTIMA REWARDS", title_style))
+        story.append(Spacer(1, 20))
+        
+        # Voucher Image (if available)
+        if redemption.voucher.image_url:
+            try:
+                print(f"Attempting to load image from URL: {redemption.voucher.image_url}")
+                response = requests.get(redemption.voucher.image_url, timeout=10)
+                print(f"Image response status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    print(f"Image downloaded successfully, size: {len(response.content)} bytes")
+                    
+                    # Use ImageReader for better compatibility
+                    img_buffer = BytesIO(response.content)
+                    img_reader = ImageReader(img_buffer)
+                    
+                    # Get original dimensions
+                    img_width, img_height = img_reader.getSize()
+                    print(f"Original image dimensions: {img_width} x {img_height}")
+                    
+                    # Calculate scaled dimensions
+                    max_width = 3 * inch
+                    if img_width > max_width:
+                        scale = max_width / img_width
+                        img_width = max_width
+                        img_height = img_height * scale
+                        print(f"Scaled image dimensions: {img_width} x {img_height}")
+                    
+                    # Create Image object with proper sizing
+                    img = Image(img_reader, width=img_width, height=img_height)
+                    img.hAlign = 'CENTER'
+                    story.append(img)
+                    story.append(Spacer(1, 20))
+                    print("Image added to PDF successfully")
+                else:
+                    print(f"Failed to download image, status code: {response.status_code}")
+                    
+            except Exception as img_error:
+                print(f"Error loading voucher image: {img_error}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("No image URL found for voucher")
+        
+        # Voucher Title
+        story.append(Paragraph(redemption.voucher.title, voucher_title_style))
+        
+        # Coupon Code in highlighted box
+        coupon_text = f"<b>COUPON CODE: {redemption.coupon_code}</b>"
+        story.append(Paragraph(coupon_text, coupon_style))
+        story.append(Spacer(1, 20))
+        
+        # Redemption Details Section
+        story.append(Paragraph("REDEMPTION DETAILS", section_style))
+        
+        redeemed_time = redemption.completed_at or timezone.now()
+        details_text = f"""
+        <b>Quantity:</b> {redemption.quantity}<br/>
+        <b>Points Used:</b> {redemption.points_used:,} points<br/>
+        <b>Redeemed On:</b> {redeemed_time.strftime('%B %d, %Y at %I:%M %p')}<br/>
+        <b>Status:</b> <font color="green">ACTIVE</font>
+        """
+        story.append(Paragraph(details_text, detail_style))
+        story.append(Spacer(1, 20))
+        
+        # Description Section
+        story.append(Paragraph("DESCRIPTION", section_style))
+        description_text = redemption.voucher.description.replace('\n', '<br/>')
+        story.append(Paragraph(description_text, detail_style))
+        story.append(Spacer(1, 20))
+        
+        # Terms and Conditions Section
+        story.append(Paragraph("TERMS AND CONDITIONS", section_style))
+        terms_text = redemption.voucher.terms.replace('\n', '<br/>')
+        story.append(Paragraph(terms_text, terms_style))
+        story.append(Spacer(1, 30))
+        
+        # Footer
+        footer_text = """
+        <para align="center" fontSize="8" textColor="#999999">
+        This voucher is valid until redeemed. Please present this voucher at the time of purchase.<br/>
+        For customer support, contact us at support@optima.com or call 1-800-OPTIMA-1
+        </para>
+        """
+        story.append(Paragraph(footer_text, styles['Normal']))
+        
+        # Build PDF
+        doc.build(story)
+        buffer.seek(0)
 
-    # Coupon Code
-    p.setFont("Helvetica-Bold", 16)
-    p.drawString(100, height - 200, f"Coupon Code: {redemption.coupon_code}")
+        # Save PDF to media directory
+        filename = f"voucher_{redemption.id}.pdf"
+        vouchers_dir = os.path.join(settings.MEDIA_ROOT, 'vouchers')
+        os.makedirs(vouchers_dir, exist_ok=True)
+        filepath = os.path.join(vouchers_dir, filename)
 
-    # Details
-    p.setFont("Helvetica", 12)
-    p.drawString(100, height - 250, f"Quantity: {redemption.quantity}")
-    p.drawString(100, height - 270, f"Points Used: {redemption.points_used}")
-    redeemed_time = redemption.completed_at or timezone.now()
-    p.drawString(100, height - 290, f"Redeemed On: {redeemed_time.strftime('%Y-%m-%d %H:%M')}")
+        with open(filepath, 'wb') as f:
+            f.write(buffer.getvalue())
 
-    # Description
-    p.drawString(100, height - 320, "Description:")
-    p.setFont("Helvetica", 10)
-    description_lines = redemption.voucher.description.split('\n')
-    y_pos = height - 340
-    for line in description_lines[:5]:  # Limit to 5 lines
-        p.drawString(120, y_pos, line[:80])  # Limit line length
-        y_pos -= 15
+        # Return relative URL that works with Django's media serving
+        return f"{settings.MEDIA_URL}vouchers/{filename}"
+        
+    except Exception as e:
+        print(f"Platypus PDF generation error: {e}")
+        raise e
 
-    # Terms
-    p.setFont("Helvetica", 12)
-    p.drawString(100, y_pos - 20, "Terms and Conditions:")
-    p.setFont("Helvetica", 10)
-    terms_lines = redemption.voucher.terms.split('\n')
-    y_pos -= 40
-    for line in terms_lines[:8]:  # Limit to 8 lines
-        p.drawString(120, y_pos, line[:80])
-        y_pos -= 15
+def generate_voucher_pdf_canvas(redemption):
+    """Generate PDF using canvas method (fallback)"""
+    try:
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
 
-    p.showPage()
-    p.save()
+        # Title
+        p.setFont("Helvetica-Bold", 24)
+        p.drawString(100, height - 100, "OPTIMA REWARDS")
 
-    buffer.seek(0)
+        # Voucher Image (if available)
+        image_height = 0
+        if redemption.voucher.image_url:
+            try:
+                print(f"Canvas: Attempting to load image from URL: {redemption.voucher.image_url}")
+                response = requests.get(redemption.voucher.image_url, timeout=10)
+                print(f"Canvas: Image response status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    print(f"Canvas: Image downloaded successfully, size: {len(response.content)} bytes")
+                    img_buffer = BytesIO(response.content)
+                    img = ImageReader(img_buffer)
+                    
+                    # Calculate image dimensions (max width 200px, maintain aspect ratio)
+                    img_width, img_height = img.getSize()
+                    print(f"Canvas: Original image dimensions: {img_width} x {img_height}")
+                    
+                    max_width = 200
+                    if img_width > max_width:
+                        scale = max_width / img_width
+                        img_width = max_width
+                        img_height = img_height * scale
+                        print(f"Canvas: Scaled image dimensions: {img_width} x {img_height}")
+                    
+                    # Center the image
+                    x_pos = (width - img_width) / 2
+                    p.drawImage(img, x_pos, height - 150 - img_height, width=img_width, height=img_height)
+                    image_height = img_height + 20  # Add some spacing
+                    print("Canvas: Image added to PDF successfully")
+                else:
+                    print(f"Canvas: Failed to download image, status code: {response.status_code}")
+                    
+            except Exception as img_error:
+                print(f"Canvas: Error loading voucher image: {img_error}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("Canvas: No image URL found for voucher")
 
-    # Save PDF to media directory
-    filename = f"voucher_{redemption.id}.pdf"
-    filepath = os.path.join(settings.MEDIA_ROOT, 'vouchers', filename)
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        # Voucher Title
+        p.setFont("Helvetica-Bold", 18)
+        p.drawString(100, height - 150 - image_height, redemption.voucher.title)
 
-    with open(filepath, 'wb') as f:
-        f.write(buffer.getvalue())
+        # Coupon Code
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(100, height - 200 - image_height, f"Coupon Code: {redemption.coupon_code}")
 
-    # Return URL
-    return f"{settings.MEDIA_URL}vouchers/{filename}"
+        # Details
+        p.setFont("Helvetica", 12)
+        p.drawString(100, height - 250 - image_height, f"Quantity: {redemption.quantity}")
+        p.drawString(100, height - 270 - image_height, f"Points Used: {redemption.points_used}")
+        redeemed_time = redemption.completed_at or timezone.now()
+        p.drawString(100, height - 290 - image_height, f"Redeemed On: {redeemed_time.strftime('%Y-%m-%d %H:%M')}")
+
+        # Description
+        p.drawString(100, height - 320 - image_height, "Description:")
+        p.setFont("Helvetica", 10)
+        description_lines = redemption.voucher.description.split('\n')
+        y_pos = height - 340 - image_height
+        for line in description_lines[:5]:  # Limit to 5 lines
+            p.drawString(120, y_pos, line[:80])  # Limit line length
+            y_pos -= 15
+
+        # Terms
+        p.setFont("Helvetica", 12)
+        p.drawString(100, y_pos - 20, "Terms and Conditions:")
+        p.setFont("Helvetica", 10)
+        terms_lines = redemption.voucher.terms.split('\n')
+        y_pos -= 40
+        for line in terms_lines[:8]:  # Limit to 8 lines
+            p.drawString(120, y_pos, line[:80])
+            y_pos -= 15
+
+        p.showPage()
+        p.save()
+
+        buffer.seek(0)
+
+        # Save PDF to media directory
+        filename = f"voucher_{redemption.id}.pdf"
+        vouchers_dir = os.path.join(settings.MEDIA_ROOT, 'vouchers')
+        os.makedirs(vouchers_dir, exist_ok=True)
+        filepath = os.path.join(vouchers_dir, filename)
+
+        with open(filepath, 'wb') as f:
+            f.write(buffer.getvalue())
+
+        # Return relative URL that works with Django's media serving
+        return f"{settings.MEDIA_URL}vouchers/{filename}"
+        
+    except Exception as e:
+        print(f"Canvas PDF generation error: {e}")
+        # Return a fallback URL or None
+        return None
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -633,11 +928,18 @@ def download_voucher_pdf(request, redemption_id):
     """Download voucher PDF"""
     try:
         redemption = Redemption.objects.get(id=redemption_id, user=request.user)
+        
+        # If PDF URL doesn't exist, try to generate it
         if not redemption.pdf_url:
-            return Response(
-                {'error': 'PDF not available'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            pdf_url = generate_voucher_pdf(redemption)
+            if pdf_url:
+                redemption.pdf_url = pdf_url
+                redemption.save()
+            else:
+                return Response(
+                    {'error': 'PDF generation failed'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
 
         # Return PDF URL for frontend to download
         return Response({'pdf_url': redemption.pdf_url})
@@ -645,6 +947,51 @@ def download_voucher_pdf(request, redemption_id):
         return Response(
             {'error': 'Redemption not found'},
             status=status.HTTP_404_NOT_FOUND
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def serve_voucher_pdf(request, redemption_id):
+    """Serve voucher PDF file directly"""
+    try:
+        redemption = Redemption.objects.get(id=redemption_id, user=request.user)
+        
+        # Generate PDF if it doesn't exist
+        if not redemption.pdf_url:
+            pdf_url = generate_voucher_pdf(redemption)
+            if not pdf_url:
+                return Response(
+                    {'error': 'PDF generation failed'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            redemption.pdf_url = pdf_url
+            redemption.save()
+        
+        # Get the file path
+        filename = f"voucher_{redemption.id}.pdf"
+        filepath = os.path.join(settings.MEDIA_ROOT, 'vouchers', filename)
+        
+        if not os.path.exists(filepath):
+            return Response(
+                {'error': 'PDF file not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Serve the file
+        with open(filepath, 'rb') as f:
+            response = HttpResponse(f.read(), content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+            
+    except Redemption.DoesNotExist:
+        return Response(
+            {'error': 'Redemption not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Error serving PDF: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 

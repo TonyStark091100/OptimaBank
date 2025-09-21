@@ -37,6 +37,7 @@ import {
   redemptionApi, 
   notificationApi,
   downloadPdf,
+  downloadPdfBlob,
   Voucher,
   VoucherCategory,
   UserProfile,
@@ -250,12 +251,23 @@ const HomePage: React.FC = () => {
     try {
       const result = await redemptionApi.redeemVoucher(voucher.id, 1);
       
-      if (result.pdf_url) {
-        // Download PDF
-        downloadPdf(result.pdf_url, `${voucher.title}_voucher.pdf`);
+      // Check different possible response structures
+      let redemptionId = null;
+      
+      if (result.redemptions && result.redemptions.length > 0) {
+        redemptionId = result.redemptions[0].id;
+      } else if (result.redemption_id) {
+        redemptionId = result.redemption_id;
+      } else {
+        throw new Error('No redemption ID found in response');
       }
       
-      setSnackbarMessage(`Successfully redeemed ${voucher.title}! PDF downloaded.`);
+      if (redemptionId) {
+        const filename = `${voucher.title.replace(/[^a-zA-Z0-9]/g, '_')}_voucher.pdf`;
+        await downloadPdfBlob(redemptionId, filename);
+      }
+      
+      setSnackbarMessage(`Successfully redeemed ${voucher.title}! PDF downloaded to your Downloads folder.`);
       setSnackbarOpen(true);
       
       // Refresh user profile and vouchers
@@ -309,16 +321,27 @@ const HomePage: React.FC = () => {
     try {
       const result = await redemptionApi.checkoutCart();
       
-      // Download all PDFs
-      if (result.redemptions) {
-        result.redemptions.forEach((redemption, index) => {
-          setTimeout(() => {
-            downloadPdf(redemption.pdf_url, `${redemption.voucher_title}_voucher.pdf`);
-          }, index * 500); // Stagger downloads
-        });
+      // Download all PDFs using blob method
+      if (result.redemptions && result.redemptions.length > 0) {
+        for (let i = 0; i < result.redemptions.length; i++) {
+          const redemption = result.redemptions[i];
+          const filename = `${redemption.voucher_title.replace(/[^a-zA-Z0-9]/g, '_')}_voucher.pdf`;
+          
+          // Use redemption_id for cart checkout (different from single redemption)
+          const redemptionId = redemption.redemption_id || redemption.id;
+          
+          // Add delay between downloads to prevent browser blocking
+          setTimeout(async () => {
+            try {
+              await downloadPdfBlob(redemptionId, filename);
+            } catch (error) {
+              console.error(`Failed to download PDF for ${redemption.voucher_title}:`, error);
+            }
+          }, i * 500);
+        }
       }
       
-      setSnackbarMessage(`Successfully checked out cart! ${result.redemptions?.length || 0} PDFs downloaded.`);
+      setSnackbarMessage(`Successfully checked out cart! ${result.redemptions?.length || 0} PDFs downloaded to your Downloads folder.`);
       setSnackbarOpen(true);
       
       // Refresh data

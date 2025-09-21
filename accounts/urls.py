@@ -26,6 +26,7 @@ urlpatterns = [
     path("redeem/", views.redeem_voucher, name="redeem_voucher"),
     path("checkout/", views.checkout_cart, name="checkout_cart"),
     path("redemptions/<str:redemption_id>/pdf/", views.download_voucher_pdf, name="download_voucher_pdf"),
+    path("redemptions/<str:redemption_id>/serve/", views.serve_voucher_pdf, name="serve_voucher_pdf"),
     
     # Notification endpoints
     path("notifications/", views.notification_list, name="notification_list"),

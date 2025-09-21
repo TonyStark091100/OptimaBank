@@ -79,6 +79,7 @@ export interface Cart {
 // Redemption interfaces
 export interface Redemption {
   id: string;
+  redemption_id?: string; // For cart checkout responses
   voucher_title: string;
   coupon_code: string;
   pdf_url: string;
@@ -305,6 +306,20 @@ export const redemptionApi = {
     
     return data;
   },
+
+  // Serve voucher PDF directly
+  serveVoucherPdf: async (redemptionId: string): Promise<Blob> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/redemptions/${redemptionId}/serve/`, {
+      headers: getAuthHeaders(),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to serve PDF');
+    }
+    
+    return response.blob();
+  },
 };
 
 // Notification APIs
@@ -343,6 +358,9 @@ export const notificationApi = {
 export const authApi = {
   // Login with email and password
   login: async (email: string, password: string): Promise<any> => {
+    console.log('Making login request to:', `${API_BASE_URL}/accounts/login/`);
+    console.log('Request body:', { email, password: '***' });
+    
     const response = await fetch(`${API_BASE_URL}/accounts/login/`, {
       method: 'POST',
       headers: {
@@ -351,11 +369,15 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     });
     
-    if (!response.ok) {
-      throw new Error('Login failed');
-    }
+    console.log('Login response status:', response.status);
+    console.log('Login response ok:', response.ok);
     
     const data = await response.json();
+    console.log('Login response data:', data);
+    
+    if (!response.ok) {
+      throw new Error(data.error || `Login failed with status ${response.status}`);
+    }
     
     // Store tokens in localStorage
     if (data.access) {
@@ -452,6 +474,36 @@ export const downloadPdf = (pdfUrl: string, filename: string = 'voucher.pdf') =>
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+};
+
+// Utility function to download PDF blob
+export const downloadPdfBlob = async (redemptionId: string, filename: string = 'voucher.pdf') => {
+  try {
+    const blob = await redemptionApi.serveVoucherPdf(redemptionId);
+    
+    // Ensure filename has .pdf extension
+    if (!filename.toLowerCase().endsWith('.pdf')) {
+      filename += '.pdf';
+    }
+    
+    // Create blob URL and download
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    
+    // Add to DOM, click, and remove
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up the blob URL
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Failed to download PDF:', error);
+    throw error;
+  }
 };
 
 // Tiered Rewards System Interfaces
@@ -786,6 +838,7 @@ const apiService = {
   tierApi,
   analyticsApi,
   downloadPdf,
+  downloadPdfBlob,
 };
 
 export default apiService;

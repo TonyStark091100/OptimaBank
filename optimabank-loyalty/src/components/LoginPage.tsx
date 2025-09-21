@@ -43,12 +43,12 @@ import { GoogleLogin, CredentialResponse } from "@react-oauth/google";
 import logo from "../logo.png";
 
 type LoginPageProps = {
-  onLogin: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  onLogin: (email: string, password: string) => Promise<void>;
   onSwitchToSignUp: () => void;
   onGoogleSignIn: (credentialResponse: CredentialResponse) => void;
   onBiometricSignIn: () => Promise<boolean>;
   onRequestOtp: (email: string) => Promise<void>;
-  onVerifyOtp: (email: string, otp: string) => Promise<void>;
+  onVerifyOtp: (email: string, otp: string, skipNavigation?: boolean) => Promise<void>;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -200,7 +200,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
     try {
       await onVerifyOtp(email, otp);
       setOtpDialogOpen(false);
-      navigate("/main", { state: { showSnackbar: true } });
+      // Navigation will be handled by the verifyOtp function
     } catch (err) {
       console.error(err);
       alert("Invalid OTP, try again!");
@@ -418,7 +418,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
                 e.preventDefault();
                 try {
                   // 1️⃣ First attempt login
-                  await onLogin(e);
+                  await onLogin(email, password);
                   // 2️⃣ Request OTP after login success
                   await handleOtpRequest();
                 } catch (error: any) {
@@ -428,6 +428,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
             >
               <Stack spacing={2}>
                 <TextField
+                  name="email"
                   label="Email Address *"
                   type="email"
                   fullWidth
@@ -473,6 +474,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
                   }}
                 />
                 <TextField
+                  name="password"
                   label="Password *"
                   type={showPassword ? "text" : "password"}
                   fullWidth
@@ -548,9 +550,20 @@ const LoginPage: React.FC<LoginPageProps> = ({
 
       {/* OTP Verification Dialog */}
       <Dialog open={otpDialogOpen} onClose={() => setOtpDialogOpen(false)}>
-        <DialogTitle>Enter OTP</DialogTitle>
+        <DialogTitle>Verify Your Login</DialogTitle>
         <DialogContent>
-          <TextField autoFocus margin="dense" label="One-Time Password" type="text" fullWidth value={otp} onChange={(e) => setOtp(e.target.value)} />
+          <Typography variant="body2" sx={{ mb: 2, color: "rgba(0, 0, 0, 0.7)" }}>
+            Enter the 6-digit OTP sent to {email}
+          </Typography>
+          <TextField 
+            autoFocus 
+            margin="dense" 
+            label="One-Time Password" 
+            type="text" 
+            fullWidth 
+            value={otp} 
+            onChange={(e) => setOtp(e.target.value)} 
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOtpDialogOpen(false)}>Cancel</Button>

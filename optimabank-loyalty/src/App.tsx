@@ -137,7 +137,7 @@ const AppInner: React.FC = () => {
     }
   };
 
-  const verifyOtp = async (email: string, otp: string) => {
+  const verifyOtp = async (email: string, otp: string, skipNavigation = false) => {
     try {
       const res = await fetch("http://localhost:8000/users/verify-otp/", {
         method: "POST",
@@ -147,7 +147,42 @@ const AppInner: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "OTP verification failed");
       alert(data.message);
-      navigate("/main");
+      
+      // If we have a stored password, it means this is a login flow
+      const tempPassword = localStorage.getItem('tempPassword');
+      if (tempPassword && !skipNavigation) {
+        // Clear the temporary password
+        localStorage.removeItem('tempPassword');
+        
+        // Login the user with stored credentials
+        try {
+          const loginResponse = await authApi.login(email, tempPassword);
+          
+          // Store tokens
+          if (loginResponse.access) {
+            localStorage.setItem('access_token', loginResponse.access);
+          }
+          if (loginResponse.refresh) {
+            localStorage.setItem('refresh_token', loginResponse.refresh);
+          }
+          
+          // Update user data from login response
+          if (loginResponse.user) {
+            localStorage.setItem('userName', `${loginResponse.user.first_name} ${loginResponse.user.last_name}`);
+            localStorage.setItem('userEmail', loginResponse.user.email);
+          }
+          
+          console.log("Login successful after OTP verification");
+        } catch (loginErr) {
+          console.error("Login error after OTP verification:", loginErr);
+          alert("Login failed after OTP verification. Please try again.");
+          return;
+        }
+      }
+      
+      if (!skipNavigation) {
+        navigate("/main");
+      }
     } catch (err: any) {
       alert(err.message);
     }
@@ -230,37 +265,50 @@ const AppInner: React.FC = () => {
               path="/signup"
               element={
                 <SignUpPage
-                  onSignUp={async (formData) => {
+                  onSignUp={async (formData, skipNavigation = false) => {
                     try {
                       const firstName = (formData?.firstName || "").toString().trim();
                       const lastName = (formData?.lastName || "").toString().trim();
                       const email = (formData?.email || "").toString().trim();
+                      const phone = (formData?.phone || "").toString().trim();
+                      const password = (formData?.password || "demo_password").toString().trim();
                       
                       if (!email) {
                         throw new Error("Email is required");
                       }
                       
-                      // Use the real login API (which creates user if doesn't exist)
-                      const response = await authApi.login(email, 'signup_demo');
-                      
-                      // Store user data from API response
-                      if (response.user) {
-                        localStorage.setItem('userName', `${response.user.first_name} ${response.user.last_name}`);
-                        localStorage.setItem('userEmail', response.user.email);
-                      } else {
-                        // Fallback to form data
-                        const fullName = `${firstName} ${lastName}`.trim() || (email ? email.split('@')[0] : 'User');
-                        localStorage.setItem('userName', fullName);
-                        localStorage.setItem('userEmail', email);
+                      if (!firstName || !lastName) {
+                        throw new Error("First name and last name are required");
                       }
                       
-                    } catch (error) {
+                      if (!phone) {
+                        throw new Error("Phone number is required");
+                      }
+                      
+                      // Use the real signup API
+                      await authApi.signup({
+                        email,
+                        first_name: firstName,
+                        last_name: lastName,
+                        phone_number: phone,
+                        password: password
+                      });
+                      
+                      // Store user data from form data (no login yet)
+                      const fullName = `${firstName} ${lastName}`.trim() || (email ? email.split('@')[0] : 'User');
+                      localStorage.setItem('userName', fullName);
+                      localStorage.setItem('userEmail', email);
+                      
+                      if (!skipNavigation) {
+                        alert("Signed up successfully!");
+                        console.log("SignUp formData:", formData);
+                        navigate("/main");
+                      }
+                      
+                    } catch (error: any) {
                       console.error('Signup error:', error);
-                      throw new Error("Signup failed! Please try again.");
+                      throw new Error(`Signup failed: ${error.message || 'Please try again.'}`);
                     }
-                    alert("Signed up successfully!");
-                    console.log("SignUp formData:", formData);
-                    navigate("/main");
                   }}
                   onSwitchToLogin={() => navigate("/login")}
                   onGoogleSignUp={handleGoogleAuth}
@@ -276,16 +324,13 @@ const AppInner: React.FC = () => {
               path="/login"
               element={
                 <LoginPage
-                  onLogin={async (e: React.FormEvent<HTMLFormElement>) => {
-                    e.preventDefault();
-
-                    const form = e.target as any;
-                    const email = form.email?.value || "";
-                    const password = form.password?.value || "";
-
+                  onLogin={async (email: string, password: string) => {
                     try {
+                      console.log('Attempting login with:', { email, password: '***' });
+                      
                       // Call the real login API
                       const response = await authApi.login(email, password);
+                      console.log('Login response:', response);
                       
                       // Store user data from API response
                       if (response.user) {
@@ -293,11 +338,16 @@ const AppInner: React.FC = () => {
                         localStorage.setItem('userEmail', response.user.email);
                       }
                       
-                      alert("Login successful!");
-                      navigate("/main");
-                    } catch (error) {
-                      console.error('Login error:', error);
-                      throw new Error("Login failed! Please try again.");
+                      // Store password temporarily for OTP verification
+                      localStorage.setItem('tempPassword', password);
+                      
+                      console.log("Login successful, OTP will be requested");
+                      // Don't navigate yet - let the OTP flow handle navigation
+                    } catch (error: any) {
+                      console.error('Login error details:', error);
+                      console.error('Error message:', error.message);
+                      console.error('Error response:', error.response);
+                      throw new Error(`Login failed: ${error.message || 'Please check your credentials and try again.'}`);
                     }
                   }}
                   onRequestOtp={requestOtp}

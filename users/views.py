@@ -58,24 +58,41 @@ def register_user(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Basic email validation
+    if "@" not in email or "." not in email.split("@")[1]:
+        return Response(
+            {"error": "Please enter a valid email address"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     if CustomUser.objects.filter(email=email).exists():
         return Response(
             {"error": "Email already exists"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    CustomUser.objects.create_user(
-        email=email,
-        first_name=first_name,
-        last_name=last_name,
-        phone_number=phone_number,
-        password=password,
-    )
-
-    return Response(
-        {"message": "User registered successfully"},
-        status=status.HTTP_201_CREATED,
-    )
+    try:
+        user = CustomUser.objects.create_user(
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            phone_number=phone_number,
+            password=password,
+        )
+        
+        # Create user profile with initial points
+        from accounts.models import UserProfile
+        UserProfile.objects.create(user=user, points=10000)
+        
+        return Response(
+            {"message": "User registered successfully"},
+            status=status.HTTP_201_CREATED,
+        )
+    except Exception as e:
+        return Response(
+            {"error": f"Registration failed: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 # -------------------------

@@ -24,12 +24,12 @@ import illustration from "../illustration.png";
 import logo from "../logo.png";
 
 type SignUpPageProps = {
-  onSignUp: (formData: any) => void;
+  onSignUp: (formData: any, skipNavigation?: boolean) => void;
   onSwitchToLogin: () => void;
   onGoogleSignUp: (credentialResponse: CredentialResponse) => void;
   onEnableBiometric: () => void;
   onRequestOtp: (email: string) => Promise<void>;
-  onVerifyOtp: (email: string, otp: string) => Promise<void>;
+  onVerifyOtp: (email: string, otp: string, skipNavigation?: boolean) => Promise<void>;
 };
 
 const SignUpPage: React.FC<SignUpPageProps> = ({
@@ -44,7 +44,13 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down("md"));
 
-  const [formData, setFormData] = useState<any>({});
+  const [formData, setFormData] = useState<{
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+    password?: string;
+  }>({});
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -53,30 +59,82 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
   const [biometricSnackbarOpen, setBiometricSnackbarOpen] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData(prev => ({ 
+      ...prev, 
+      [name]: value 
+    }));
   };
 
   const handleClickShowPassword = () => setShowPassword(!showPassword);
 
-  // Request OTP
+  // Request OTP - First create user, then send OTP
   const handleRequestOtpHandler = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!formData.email) return alert("Enter your email first");
+    if (!formData.email || !formData.firstName || !formData.lastName || !formData.phone || !formData.password) {
+      alert("Please fill in all required fields");
+      return;
+    }
+    
     try {
+      // First create the user account (skip navigation)
+      await onSignUp(formData, true);
+      
+      // Then request OTP for the newly created user
       await onRequestOtp(formData.email);
       setOtpSent(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Failed to send OTP");
+      alert(`Failed to create account or send OTP: ${err.message || 'Please try again'}`);
     }
   };
 
-  // Verify OTP → Sign up → show biometric snackbar (if mobile/tablet and not decided)
+  // Verify OTP → Complete signup process
   const handleVerifyOtpHandler = async () => {
     try {
-      await onVerifyOtp(formData.email, otp);
-      // call parent sign up handler
-      onSignUp(formData);
+      if (!formData.email || !formData.password) {
+        alert("Email and password are required");
+        return;
+      }
+      
+      // Verify the OTP (skip navigation, we'll handle it ourselves)
+      await onVerifyOtp(formData.email, otp, true);
+
+      // After OTP verification, login the user
+      try {
+        const response = await fetch("http://localhost:8000/accounts/login/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            email: formData.email, 
+            password: formData.password 
+          }),
+        });
+        
+        if (response.ok) {
+          const loginData = await response.json();
+          
+          // Store tokens
+          if (loginData.access) {
+            localStorage.setItem('access_token', loginData.access);
+          }
+          if (loginData.refresh) {
+            localStorage.setItem('refresh_token', loginData.refresh);
+          }
+          
+          // Update user data from login response
+          if (loginData.user) {
+            localStorage.setItem('userName', `${loginData.user.first_name} ${loginData.user.last_name}`);
+            localStorage.setItem('userEmail', loginData.user.email);
+          }
+          
+          console.log("Login successful after OTP verification");
+        } else {
+          console.error("Login failed after OTP verification");
+        }
+      } catch (loginErr) {
+        console.error("Login error after OTP verification:", loginErr);
+      }
 
       // only ask if on mobile/tablet and user hasn't made a biometric decision before
       const alreadyDecided = localStorage.getItem("biometricChoiceMade") === "true";
@@ -341,14 +399,49 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
             {/* Sign Up Form */}
             <Box component="form" onSubmit={handleRequestOtpHandler}>
               <Stack spacing={2}>
-                <TextField name="firstName" label="First Name" onChange={handleChange} fullWidth required size="small" />
-                <TextField name="lastName" label="Last Name" onChange={handleChange} fullWidth required size="small" />
-                <TextField name="email" label="Email Address" type="email" onChange={handleChange} fullWidth required size="small" />
-                <TextField name="phone" label="Phone Number" type="tel" onChange={handleChange} fullWidth required size="small" />
+                <TextField 
+                  name="firstName" 
+                  label="First Name" 
+                  value={formData.firstName || ''}
+                  onChange={handleChange} 
+                  fullWidth 
+                  required 
+                  size="small" 
+                />
+                <TextField 
+                  name="lastName" 
+                  label="Last Name" 
+                  value={formData.lastName || ''}
+                  onChange={handleChange} 
+                  fullWidth 
+                  required 
+                  size="small" 
+                />
+                <TextField 
+                  name="email" 
+                  label="Email Address" 
+                  type="email" 
+                  value={formData.email || ''}
+                  onChange={handleChange} 
+                  fullWidth 
+                  required 
+                  size="small" 
+                />
+                <TextField 
+                  name="phone" 
+                  label="Phone Number" 
+                  type="tel" 
+                  value={formData.phone || ''}
+                  onChange={handleChange} 
+                  fullWidth 
+                  required 
+                  size="small" 
+                />
                 <TextField
                   name="password"
                   label="Create Password"
                   type={showPassword ? "text" : "password"}
+                  value={formData.password || ''}
                   onChange={handleChange}
                   fullWidth
                   required
@@ -377,7 +470,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
                     "&:hover": { backgroundColor: "#8a3ffb" },
                   }}
                 >
-                  Request OTP
+                  Create Account & Send OTP
                 </Button>
               </Stack>
             </Box>
@@ -420,7 +513,10 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
         >
           <Paper sx={{ p: 4, borderRadius: 3, textAlign: "center", width: 400, backgroundColor: "rgba(34,34,50,0.98)", color: "white" }}>
             <Typography variant="h6" gutterBottom>
-              Enter OTP
+              Verify Your Account
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 2, color: "rgba(255, 255, 255, 0.7)" }}>
+              Enter the 6-digit OTP sent to {formData.email}
             </Typography>
             <TextField
               label="6-digit OTP"
