@@ -436,9 +436,17 @@ export const redemptionApi = {
     console.log('redeemVoucher headers:', headers);
     
     try {
+      const authHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      
+      if ((headers as any).Authorization) {
+        authHeaders['Authorization'] = (headers as any).Authorization;
+      }
+      
       const response = await fetch(`${API_BASE_URL}/accounts/redeem/`, {
         method: 'POST',
-        headers,
+        headers: authHeaders,
         body: JSON.stringify({ voucher_id: voucherId, quantity }),
       });
       
