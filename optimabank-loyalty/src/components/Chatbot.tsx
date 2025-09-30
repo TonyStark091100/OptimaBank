@@ -52,12 +52,13 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
     try {
       setIsLoading(true);
       setError(null);
+      
       const newSession = await chatbotApi.startChat();
       setSession(newSession);
       setMessages(newSession.messages || []);
     } catch (err) {
-      setError('Failed to start chat session. Please try again.');
       console.error('Error starting chat:', err);
+      setError('Failed to start chat session. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -83,8 +84,8 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
         setSession(updatedSession);
       }
     } catch (err) {
-      setError('Failed to send message. Please try again.');
       console.error('Error sending message:', err);
+      setError('Failed to send message. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -176,9 +177,41 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
           }}
         >
           {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
+            <Alert 
+              severity="error" 
+              sx={{ 
+                mb: 2,
+                backgroundColor: 'rgba(211, 47, 47, 0.1)',
+                border: '1px solid rgba(211, 47, 47, 0.3)',
+                color: 'white',
+                '& .MuiAlert-icon': {
+                  color: '#ff6b6b',
+                },
+              }}
+            >
               {error}
             </Alert>
+          )}
+
+          {!session && !isLoading && !error && (
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                py: 4,
+                textAlign: 'center',
+              }}
+            >
+              <BotIcon sx={{ fontSize: 48, color: '#A259FF', mb: 2 }} />
+              <Typography variant="h6" sx={{ color: 'white', mb: 1 }}>
+                Welcome to Optima Rewards Assistant
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 2 }}>
+                I'm here to help you with any questions about Optima Rewards!
+              </Typography>
+            </Box>
           )}
 
           {messages.map((message, index) => (

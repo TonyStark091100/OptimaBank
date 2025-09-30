@@ -106,7 +106,7 @@ class Redemption(models.Model):
     points_used = models.IntegerField()
     coupon_code = models.CharField(max_length=20, unique=True, blank=True)
     status = models.CharField(max_length=20, choices=REDEMPTION_STATUS_CHOICES, default='pending')
-    pdf_url = models.URLField(blank=True)
+    pdf_url = models.URLField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -220,24 +220,75 @@ class UserTier(models.Model):
         return max(0, points_needed)
 
     def check_tier_upgrade(self):
-        """Check if user should be upgraded to next tier."""
+        """Check if user should be upgraded to next tier with enhanced real-time logic."""
         next_tier = self.current_tier.get_next_tier()
         if not next_tier:
             return False  # Already at highest tier
         
-        if self.total_points_earned >= next_tier.min_points:
+        # Enhanced tier upgrade logic with more realistic requirements
+        points_required = next_tier.min_points
+        
+        # Check if user has enough points for tier upgrade
+        if self.total_points_earned >= points_required:
+            old_tier = self.current_tier
+            
+            # Calculate tier points for the new tier
+            tier_points_for_new_tier = self.total_points_earned - points_required
+            
             self.current_tier = next_tier
-            self.tier_points = 0
+            self.tier_points = tier_points_for_new_tier
             self.last_tier_upgrade = timezone.now()
             self.save()
             
-            # Create notification for tier upgrade
+            # Create comprehensive notification for tier upgrade
+            tier_benefits = next_tier.tier_benefits.all()[:3]  # Get first 3 benefits
+            benefits_text = ""
+            if tier_benefits:
+                benefits_text = f"\n\nNew benefits unlocked:\n"
+                for benefit in tier_benefits:
+                    benefits_text += f"• {benefit.benefit_name}\n"
+            
             Notification.objects.create(
                 user=self.user,
-                message=f"🎉 Congratulations! You've been upgraded to {next_tier.get_tier_name_display()} tier!"
+                message=f"🎉 Congratulations! You've been upgraded to {next_tier.get_tier_name_display()} tier!{benefits_text}"
             )
+            
+            # Check if there's another tier upgrade possible
+            self.check_tier_upgrade()  # Recursive check for multiple tier upgrades
+            
             return True
         return False
+    
+    def get_tier_progress_info(self):
+        """Get detailed tier progress information for real-time display."""
+        next_tier = self.current_tier.get_next_tier()
+        
+        if not next_tier:
+            return {
+                'current_tier': self.current_tier,
+                'next_tier': None,
+                'progress_percentage': 100,
+                'points_needed': 0,
+                'points_in_current_tier': self.tier_points,
+                'is_max_tier': True
+            }
+        
+        current_tier_min = self.current_tier.min_points
+        next_tier_min = next_tier.min_points
+        points_needed = next_tier_min - self.total_points_earned
+        
+        progress_percentage = ((self.total_points_earned - current_tier_min) / (next_tier_min - current_tier_min)) * 100
+        progress_percentage = max(0, min(100, progress_percentage))
+        
+        return {
+            'current_tier': self.current_tier,
+            'next_tier': next_tier,
+            'progress_percentage': round(progress_percentage, 1),
+            'points_needed': max(0, points_needed),
+            'points_in_current_tier': self.tier_points,
+            'total_points_earned': self.total_points_earned,
+            'is_max_tier': False
+        }
 
 
 class TierBenefit(models.Model):
@@ -301,3 +352,76 @@ class TierActivity(models.Model):
         
         # Check for tier upgrade
         user_tier.check_tier_upgrade()
+
+
+class MiniGame(models.Model):
+    """Model representing mini-games that users can play to earn points."""
+    GAME_TYPES = [
+        ('spin_wheel', 'Spin the Wheel'),
+        ('memory_game', 'Memory Game'),
+        ('trivia_quiz', 'Trivia Quiz'),
+        ('daily_challenge', 'Daily Challenge'),
+    ]
+    
+    name = models.CharField(max_length=100)
+    game_type = models.CharField(max_length=20, choices=GAME_TYPES)
+    description = models.TextField()
+    base_points = models.IntegerField(default=10)
+    max_points = models.IntegerField(default=100)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self) -> str:
+        return str(self.name)
+
+
+class GameSession(models.Model):
+    """Model representing a user's game session and points earned."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    game = models.ForeignKey(MiniGame, on_delete=models.CASCADE)
+    score = models.IntegerField(default=0)
+    points_earned = models.IntegerField(default=0)
+    played_at = models.DateTimeField(auto_now_add=True)
+    duration_seconds = models.IntegerField(default=0)
+    
+    class Meta:
+        ordering = ['-played_at']
+    
+    def __str__(self) -> str:
+        return f"{self.user.email} - {self.game.name} - {self.points_earned} points"
+
+
+class LeaderboardEntry(models.Model):
+    """Model for leaderboard entries with privacy controls."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    total_points = models.IntegerField(default=0)
+    tier_name = models.CharField(max_length=20, default='bronze')
+    is_public = models.BooleanField(default=True)
+    last_updated = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-total_points', 'last_updated']
+        unique_together = ['user']
+    
+    def __str__(self) -> str:
+        return f"{self.user.email} - {self.total_points} points"
+    
+    @classmethod
+    def update_user_entry(cls, user):
+        """Update or create leaderboard entry for a user."""
+        try:
+            profile = UserProfile.objects.get(user=user)
+            entry, created = cls.objects.get_or_create(
+                user=user,
+                defaults={
+                    'total_points': profile.points,
+                    'tier_name': profile.tier,
+                    'is_public': True
+                }
+            )
+            if not created:
+                entry.total_points = profile.points
+                entry.tier_name = profile.tier
+                entry.save()
+        except UserProfile.DoesNotExist:
+            pass

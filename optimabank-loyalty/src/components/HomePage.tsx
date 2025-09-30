@@ -1,5 +1,6 @@
 // src/components/HomePage.tsx
 import React, { useState, useEffect } from 'react';
+// import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -29,14 +30,12 @@ import {
   Tabs,
   Tab
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
 import {
   voucherApi, 
   userApi, 
   cartApi, 
   redemptionApi, 
   notificationApi,
-  downloadPdf,
   downloadPdfBlob,
   Voucher,
   VoucherCategory,
@@ -46,11 +45,23 @@ import {
 } from '../services/api';
 import SettingsPage from './SettingsPage';
 import TierProgress from './TierProgress';
+import SpendingInsights from './SpendingInsights';
+import TimezoneSelector from './TimezoneSelector';
+import TimezonePromotions from './TimezonePromotions';
+import MiniGames from './MiniGames';
+import Leaderboard from './Leaderboard';
+import EditProfilePage from './EditProfilePage';
+import { useRealtimeClock, getUserTimezone } from '../utils/timezone';
+import { animationPresets, microInteractions, createStaggerAnimation } from '../utils/animations';
 import {
   Search as SearchIcon,
   Notifications as NotificationsIcon,
   ShoppingCart as ShoppingCartIcon,
   AccountCircle as AccountCircleIcon,
+  EmojiEvents,
+  Close,
+  Person as PersonIcon,
+  SportsEsports as GameControllerIcon,
   Star as StarIcon,
   Edit as EditIcon,
   Settings as SettingsIcon,
@@ -75,6 +86,8 @@ import {
 } from '@mui/icons-material';
 import logo from '../logo.png';
 
+const API_BASE_URL = 'http://127.0.0.1:8000';
+
 // Icon mapping for voucher categories
 const categoryIcons: Record<string, React.ReactElement> = {
   'All Vouchers': <LocalOfferIcon />,
@@ -91,10 +104,32 @@ const categoryIcons: Record<string, React.ReactElement> = {
 
 // Data will be loaded from APIs
 
-const HomePage: React.FC = () => {
-  const navigate = useNavigate();
+interface HomePageProps {
+  onShowSnackbar: (message: string, severity: 'success' | 'error' | 'warning' | 'info') => void;
+  onLogout?: () => void;
+}
+
+const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
+  // const navigate = useNavigate();
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
+  const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  
+  
+  // Mobile-specific state
+  const [swipeStartX, setSwipeStartX] = useState<number | null>(null);
+  
+  // Personalized recommendations state
+  const [showPersonalized, setShowPersonalized] = useState(true);
+  
+  // Timezone state
+  const [currentTimezone, setCurrentTimezone] = useState<string>(getUserTimezone());
+  const { timezoneInfo, formattedTime } = useRealtimeClock(currentTimezone);
+  
+  // Mini-games and Leaderboard state
+  const [miniGamesOpen, setMiniGamesOpen] = useState(false);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
 
   // UI State
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -120,6 +155,63 @@ const HomePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Authentication check
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    const refreshToken = localStorage.getItem('refresh_token');
+    const userName = localStorage.getItem('userName');
+    const userEmail = localStorage.getItem('userEmail');
+    
+    console.log('HomePage mounted - checking authentication');
+    console.log('Token found:', !!token);
+    console.log('Refresh token found:', !!refreshToken);
+    console.log('User name:', userName);
+    console.log('User email:', userEmail);
+    
+    if (token) {
+      console.log('Token preview:', token.substring(0, 20) + '...');
+    }
+    
+    if (!token) {
+      console.log('No access token found, redirecting to login');
+      // navigate('/login');
+      return;
+    }
+    
+    console.log('User is authenticated, proceeding with data load');
+  }, []);
+
+  // Test token validity
+  const testTokenValidity = async (token: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/accounts/profile/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      console.log('Token validation response status:', response.status);
+      return response.ok;
+    } catch (error) {
+      console.error('Token validation error:', error);
+      return false;
+    }
+  };
+
+  // Retry function for failed API calls
+  const retryApiCall = async (apiCall: () => Promise<any>, retries = 3): Promise<any> => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await apiCall();
+      } catch (error) {
+        console.log(`API call attempt ${i + 1} failed:`, error);
+        if (i === retries - 1) throw error;
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+      }
+    }
+  };
+
   const open = Boolean(anchorEl);
   const cartOpen = Boolean(cartAnchorEl);
   const notificationsOpen = Boolean(notificationsAnchorEl);
@@ -131,13 +223,50 @@ const HomePage: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        // Load all data in parallel
+        // Check if user is authenticated before making API calls
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+          console.log('No access token found, skipping data load');
+          setLoading(false);
+          return;
+        }
+
+        console.log('Loading data with token:', token.substring(0, 20) + '...');
+        
+        // Test token validity first
+        const isTokenValid = await testTokenValidity(token);
+        if (!isTokenValid) {
+          console.error('Token is invalid, redirecting to login');
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          // navigate('/login');
+          return;
+        }
+        
+        console.log('Token is valid, proceeding with data load');
+
+        // Load all data in parallel with retry mechanism
         const [vouchersData, categoriesData, profileData, cartData, notificationsData] = await Promise.all([
-          voucherApi.getVouchers(),
-          voucherApi.getCategories(),
-          userApi.getProfile(),
-          cartApi.getCart(),
-          notificationApi.getNotifications()
+          retryApiCall(() => voucherApi.getVouchers()).catch(err => {
+            console.error('Error fetching vouchers after retries:', err);
+            throw new Error('Failed to fetch vouchers');
+          }),
+          retryApiCall(() => voucherApi.getCategories()).catch(err => {
+            console.error('Error fetching categories after retries:', err);
+            throw new Error('Failed to fetch categories');
+          }),
+          retryApiCall(() => userApi.getProfile()).catch(err => {
+            console.error('Error fetching profile after retries:', err);
+            throw new Error('Failed to fetch profile');
+          }),
+          retryApiCall(() => cartApi.getCart()).catch(err => {
+            console.error('Error fetching cart after retries:', err);
+            throw new Error('Failed to fetch cart');
+          }),
+          retryApiCall(() => notificationApi.getNotifications()).catch(err => {
+            console.error('Error fetching notifications after retries:', err);
+            throw new Error('Failed to fetch notifications');
+          })
         ]);
 
         setVouchers(vouchersData);
@@ -145,6 +274,8 @@ const HomePage: React.FC = () => {
         setUserProfile(profileData);
         setCart(cartData);
         setUserNotifications(notificationsData);
+
+        console.log('Data loaded successfully');
 
       } catch (err) {
         console.error('Error loading data:', err);
@@ -178,6 +309,57 @@ const HomePage: React.FC = () => {
     return matchesCategory && matchesSearch;
   });
 
+  // Generate personalized recommendations
+  const generatePersonalizedRecommendations = () => {
+    if (!userProfile || !vouchers.length) return [];
+
+    const userPoints = userProfile.points;
+    const userTier = (userProfile as any).tier || 'bronze';
+    
+    // Algorithm for personalized recommendations
+    const recommendations = vouchers
+      .filter(voucher => {
+        // Filter by affordability (within 150% of user's points)
+        const isAffordable = voucher.points <= userPoints * 1.5;
+        
+        // Filter by tier appropriateness
+        const tierMultiplier = userTier === 'platinum' ? 1.2 : userTier === 'gold' ? 1.1 : 1.0;
+        const isTierAppropriate = voucher.points <= 5000 * tierMultiplier;
+        
+        return isAffordable && isTierAppropriate;
+      })
+      .sort((a, b) => {
+        // Sort by relevance score
+        const scoreA = calculateRelevanceScore(a, userProfile);
+        const scoreB = calculateRelevanceScore(b, userProfile);
+        return scoreB - scoreA;
+      })
+      .slice(0, 6); // Top 6 recommendations
+
+    return recommendations;
+  };
+
+  const calculateRelevanceScore = (voucher: Voucher, profile: any) => {
+    let score = 0;
+    
+    // Points-based scoring (closer to user's points = higher score)
+    const pointsDiff = Math.abs(voucher.points - profile.points);
+    score += Math.max(0, 100 - pointsDiff / 100);
+    
+    // Featured vouchers get bonus
+    if (voucher.featured) score += 50;
+    
+    // Category preferences (mock - in real app, analyze user history)
+    const preferredCategories = ['Dining', 'Shopping', 'Entertainment'];
+    if (preferredCategories.includes(voucher.category)) score += 30;
+    
+    // Discount-based scoring
+    const discountValue = parseFloat(voucher.discount.replace(/[^\d.]/g, ''));
+    score += discountValue * 2;
+    
+    return score;
+  };
+
   // Get featured vouchers for banner
   const featuredVouchers = vouchers.filter(v => v.featured);
   const currentBannerVoucher = featuredVouchers[currentBannerIndex];
@@ -204,7 +386,7 @@ const HomePage: React.FC = () => {
 
   const handleEditProfile = () => {
     handleProfileMenuClose();
-    navigate('/edit');
+    setEditProfileOpen(true);
   };
 
   const handleLogout = () => {
@@ -321,27 +503,35 @@ const HomePage: React.FC = () => {
     try {
       const result = await redemptionApi.checkoutCart();
       
-      // Download all PDFs using blob method
-      if (result.redemptions && result.redemptions.length > 0) {
-        for (let i = 0; i < result.redemptions.length; i++) {
-          const redemption = result.redemptions[i];
-          const filename = `${redemption.voucher_title.replace(/[^a-zA-Z0-9]/g, '_')}_voucher.pdf`;
-          
-          // Use redemption_id for cart checkout (different from single redemption)
-          const redemptionId = redemption.redemption_id || redemption.id;
-          
-          // Add delay between downloads to prevent browser blocking
-          setTimeout(async () => {
-            try {
-              await downloadPdfBlob(redemptionId, filename);
-            } catch (error) {
-              console.error(`Failed to download PDF for ${redemption.voucher_title}:`, error);
-            }
-          }, i * 500);
+      // Handle PDF download based on whether it's single or multiple vouchers
+      if (result.is_multi_voucher && result.pdf_url && result.redemptions && result.redemptions.length > 0) {
+        // Multiple vouchers - download the single combined PDF
+        const filename = `Multi_Voucher_Redemption_${new Date().toISOString().split('T')[0]}.pdf`;
+        try {
+          const redemptionId = result.redemptions[0].redemption_id || result.redemptions[0].id;
+          await downloadPdfBlob(redemptionId, filename);
+          setSnackbarMessage(`Successfully checked out cart! Combined PDF with ${result.redemptions.length} vouchers downloaded to your Downloads folder.`);
+        } catch (error) {
+          console.error('Failed to download combined PDF:', error);
+          setSnackbarMessage('Cart checked out successfully, but PDF download failed. You can download it from your redemptions.');
         }
+      } else if (result.redemptions && result.redemptions.length > 0) {
+        // Single voucher - download individual PDF
+        const redemption = result.redemptions[0];
+        const filename = `${redemption.voucher_title.replace(/[^a-zA-Z0-9]/g, '_')}_voucher.pdf`;
+        const redemptionId = redemption.redemption_id || redemption.id;
+        
+        try {
+          await downloadPdfBlob(redemptionId, filename);
+          setSnackbarMessage(`Successfully checked out cart! PDF downloaded to your Downloads folder.`);
+        } catch (error) {
+          console.error(`Failed to download PDF for ${redemption.voucher_title}:`, error);
+          setSnackbarMessage('Cart checked out successfully, but PDF download failed. You can download it from your redemptions.');
+        }
+      } else {
+        setSnackbarMessage('Cart checked out successfully!');
       }
       
-      setSnackbarMessage(`Successfully checked out cart! ${result.redemptions?.length || 0} PDFs downloaded to your Downloads folder.`);
       setSnackbarOpen(true);
       
       // Refresh data
@@ -373,6 +563,29 @@ const HomePage: React.FC = () => {
 
   const handlePrevBanner = () => {
     setCurrentBannerIndex((prev) => (prev - 1 + featuredVouchers.length) % featuredVouchers.length);
+  };
+
+  // Mobile swipe handlers
+  const handleSwipeStart = (e: React.TouchEvent) => {
+    setSwipeStartX(e.touches[0].clientX);
+  };
+
+  const handleSwipeEnd = (e: React.TouchEvent) => {
+    if (swipeStartX === null) return;
+    
+    const swipeEndX = e.changedTouches[0].clientX;
+    const swipeDistance = swipeStartX - swipeEndX;
+    const minSwipeDistance = 50;
+
+    if (Math.abs(swipeDistance) > minSwipeDistance) {
+      if (swipeDistance > 0) {
+        handleNextBanner(); // Swipe left - next
+      } else {
+        handlePrevBanner(); // Swipe right - previous
+      }
+    }
+    
+    setSwipeStartX(null);
   };
 
   // Computed values
@@ -437,7 +650,40 @@ const HomePage: React.FC = () => {
           </Typography>
           <Button
             variant="contained"
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              setError(null);
+              setLoading(true);
+              // Reload data
+              const loadData = async () => {
+                try {
+                  const token = localStorage.getItem('access_token');
+                  if (!token) {
+                    // navigate('/login');
+                    return;
+                  }
+
+                  const [vouchersData, categoriesData, profileData, cartData, notificationsData] = await Promise.all([
+                    retryApiCall(() => voucherApi.getVouchers()),
+                    retryApiCall(() => voucherApi.getCategories()),
+                    retryApiCall(() => userApi.getProfile()),
+                    retryApiCall(() => cartApi.getCart()),
+                    retryApiCall(() => notificationApi.getNotifications())
+                  ]);
+
+                  setVouchers(vouchersData);
+                  setVoucherCategories(categoriesData);
+                  setUserProfile(profileData);
+                  setCart(cartData);
+                  setUserNotifications(notificationsData);
+                } catch (err) {
+                  console.error('Error reloading data:', err);
+                  setError(err instanceof Error ? err.message : 'Failed to load data');
+                } finally {
+                  setLoading(false);
+                }
+              };
+              loadData();
+            }}
             sx={{
               background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
               '&:hover': { background: 'linear-gradient(45deg, #9147e6 30%, #7a36d9 90%)' },
@@ -508,6 +754,28 @@ const HomePage: React.FC = () => {
             >
               OPTIMA REWARDS
             </Typography>
+            
+            {/* Real-time Clock */}
+            {!isSmallScreen && (
+              <Box sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                ml: 3,
+                p: 1.5,
+                bgcolor: 'rgba(162, 89, 255, 0.1)',
+                borderRadius: 2,
+                border: '1px solid rgba(162, 89, 255, 0.3)',
+                backdropFilter: 'blur(10px)'
+              }}>
+                <Typography variant="h6" sx={{ color: '#A259FF', fontWeight: 'bold', fontSize: '1rem' }}>
+                  {formattedTime}
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.7rem' }}>
+                  {timezoneInfo.city} • {timezoneInfo.offset}
+                </Typography>
+              </Box>
+            )}
           </Box>
 
           {/* Mobile Layout - Stack vertically */}
@@ -534,18 +802,56 @@ const HomePage: React.FC = () => {
                 
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <IconButton 
-                    sx={{ color: '#A259FF' }} 
                     onClick={handleCartMenuOpen}
-                    size="small"
+                    sx={{
+                      color: '#FFFFFF',
+                      bgcolor: 'rgba(162, 89, 255, 0.15)',
+                      border: '2px solid rgba(162, 89, 255, 0.4)',
+                      borderRadius: '12px',
+                      width: 40,
+                      height: 40,
+                      backdropFilter: 'blur(10px)',
+                      boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
+                      '&:hover': {
+                        bgcolor: 'rgba(162, 89, 255, 0.25)',
+                        border: '2px solid rgba(162, 89, 255, 0.6)',
+                        transform: 'scale(1.08) translateY(-2px)',
+                        boxShadow: '0 8px 30px rgba(162, 89, 255, 0.4)'
+                      },
+                      transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                      '& .MuiSvgIcon-root': {
+                        fontSize: '1.2rem',
+                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                      }
+                    }}
                   >
                     <Badge badgeContent={totalCartItems} color="error">
                       <ShoppingCartIcon />
                     </Badge>
                   </IconButton>
                   <IconButton 
-                    sx={{ color: '#A259FF' }} 
                     onClick={handleNotificationsMenuOpen}
-                    size="small"
+                    sx={{
+                      color: '#FFFFFF',
+                      bgcolor: 'rgba(162, 89, 255, 0.15)',
+                      border: '2px solid rgba(162, 89, 255, 0.4)',
+                      borderRadius: '12px',
+                      width: 40,
+                      height: 40,
+                      backdropFilter: 'blur(10px)',
+                      boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
+                      '&:hover': {
+                        bgcolor: 'rgba(162, 89, 255, 0.25)',
+                        border: '2px solid rgba(162, 89, 255, 0.6)',
+                        transform: 'scale(1.08) translateY(-2px)',
+                        boxShadow: '0 8px 30px rgba(162, 89, 255, 0.4)'
+                      },
+                      transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                      '& .MuiSvgIcon-root': {
+                        fontSize: '1.2rem',
+                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                      }
+                    }}
                   >
                     <Badge badgeContent={unreadNotifications} color="error">
                       <NotificationsIcon />
@@ -581,7 +887,21 @@ const HomePage: React.FC = () => {
                   backdropFilter: 'blur(10px)'
                 }}
               >
-                <IconButton sx={{ p: '10px', color: '#A259FF' }} aria-label="search">
+                <IconButton 
+                  sx={{ 
+                    p: '10px', 
+                    color: '#FFFFFF',
+                    bgcolor: 'rgba(162, 89, 255, 0.1)',
+                    border: '1px solid rgba(162, 89, 255, 0.3)',
+                    borderRadius: '8px',
+                    '&:hover': {
+                      bgcolor: 'rgba(162, 89, 255, 0.2)',
+                      border: '1px solid rgba(162, 89, 255, 0.5)'
+                    },
+                    transition: 'all 0.3s ease'
+                  }} 
+                  aria-label="search"
+                >
                   <SearchIcon />
                 </IconButton>
                 <InputBase 
@@ -625,7 +945,21 @@ const HomePage: React.FC = () => {
               backdropFilter: 'blur(10px)'
             }}
           >
-            <IconButton sx={{ p: '10px', color: '#A259FF' }} aria-label="search">
+            <IconButton 
+              sx={{ 
+                p: '10px', 
+                color: '#FFFFFF',
+                bgcolor: 'rgba(162, 89, 255, 0.1)',
+                border: '1px solid rgba(162, 89, 255, 0.3)',
+                borderRadius: '8px',
+                '&:hover': {
+                  bgcolor: 'rgba(162, 89, 255, 0.2)',
+                  border: '1px solid rgba(162, 89, 255, 0.5)'
+                },
+                transition: 'all 0.3s ease'
+              }} 
+              aria-label="search"
+            >
               <SearchIcon />
             </IconButton>
             <InputBase 
@@ -644,10 +978,30 @@ const HomePage: React.FC = () => {
             />
           </Paper>
 
-          <Box sx={{ display: 'flex' }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
             <IconButton 
-              sx={{ color: '#A259FF', mx: 1 }} 
               onClick={handleCartMenuOpen}
+              sx={{
+                color: '#FFFFFF',
+                bgcolor: 'rgba(162, 89, 255, 0.15)',
+                border: '2px solid rgba(162, 89, 255, 0.4)',
+                borderRadius: '12px',
+                width: 48,
+                height: 48,
+                backdropFilter: 'blur(10px)',
+                boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
+                '&:hover': {
+                  bgcolor: 'rgba(162, 89, 255, 0.25)',
+                  border: '2px solid rgba(162, 89, 255, 0.6)',
+                  transform: 'scale(1.08) translateY(-2px)',
+                  boxShadow: '0 8px 30px rgba(162, 89, 255, 0.4)'
+                },
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                '& .MuiSvgIcon-root': {
+                  fontSize: '1.5rem',
+                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                }
+              }}
             >
               <Badge badgeContent={totalCartItems} color="error">
                 <ShoppingCartIcon />
@@ -655,12 +1009,92 @@ const HomePage: React.FC = () => {
             </IconButton>
 
             <IconButton 
-              sx={{ color: '#A259FF', mx: 1 }} 
               onClick={handleNotificationsMenuOpen}
+              sx={{
+                color: '#FFFFFF',
+                bgcolor: 'rgba(162, 89, 255, 0.15)',
+                border: '2px solid rgba(162, 89, 255, 0.4)',
+                borderRadius: '12px',
+                width: 48,
+                height: 48,
+                backdropFilter: 'blur(10px)',
+                boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
+                '&:hover': {
+                  bgcolor: 'rgba(162, 89, 255, 0.25)',
+                  border: '2px solid rgba(162, 89, 255, 0.6)',
+                  transform: 'scale(1.08) translateY(-2px)',
+                  boxShadow: '0 8px 30px rgba(162, 89, 255, 0.4)'
+                },
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                '& .MuiSvgIcon-root': {
+                  fontSize: '1.5rem',
+                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                }
+              }}
             >
               <Badge badgeContent={unreadNotifications} color="error">
                 <NotificationsIcon />
               </Badge>
+            </IconButton>
+
+            <SpendingInsights />
+            
+            <TimezoneSelector 
+              variant="icon" 
+              size="medium" 
+              onTimezoneChange={setCurrentTimezone}
+            />
+            <IconButton 
+              onClick={() => setMiniGamesOpen(true)}
+              sx={{
+                color: '#FFFFFF',
+                bgcolor: 'rgba(162, 89, 255, 0.15)',
+                border: '2px solid rgba(162, 89, 255, 0.4)',
+                borderRadius: '12px',
+                width: 48,
+                height: 48,
+                backdropFilter: 'blur(10px)',
+                boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
+                '&:hover': {
+                  bgcolor: 'rgba(162, 89, 255, 0.25)',
+                  border: '2px solid rgba(162, 89, 255, 0.6)',
+                  transform: 'scale(1.08) translateY(-2px)',
+                  boxShadow: '0 8px 30px rgba(162, 89, 255, 0.4)'
+                },
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                '& .MuiSvgIcon-root': {
+                  fontSize: '1.5rem',
+                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                }
+              }}
+            >
+              <GameControllerIcon />
+            </IconButton>
+            <IconButton 
+              onClick={() => setLeaderboardOpen(true)}
+              sx={{
+                color: '#FFFFFF',
+                bgcolor: 'rgba(162, 89, 255, 0.15)',
+                border: '2px solid rgba(162, 89, 255, 0.4)',
+                borderRadius: '12px',
+                width: 48,
+                height: 48,
+                backdropFilter: 'blur(10px)',
+                boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
+                '&:hover': {
+                  bgcolor: 'rgba(162, 89, 255, 0.25)',
+                  border: '2px solid rgba(162, 89, 255, 0.6)',
+                  transform: 'scale(1.08) translateY(-2px)',
+                  boxShadow: '0 8px 30px rgba(162, 89, 255, 0.4)'
+                },
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                '& .MuiSvgIcon-root': {
+                  fontSize: '1.5rem',
+                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                }
+              }}
+            >
+              <EmojiEvents />
             </IconButton>
 
             <IconButton 
@@ -723,7 +1157,29 @@ const HomePage: React.FC = () => {
                             {notification.message}
                           </Typography>
                           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.5)', mt: 0.5, display: 'block' }}>
-                            {new Date(notification.created_at).toLocaleDateString()}
+                            {(() => {
+                              const date = new Date(notification.created_at);
+                              console.log('Notification date debug:', {
+                                raw: notification.created_at,
+                                parsed: date,
+                                localString: date.toLocaleString('en-US', { 
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  hour12: true
+                                })
+                              });
+                              return date.toLocaleString('en-US', { 
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true
+                              });
+                            })()}
                           </Typography>
                         </Box>
                       ))}
@@ -812,11 +1268,11 @@ const HomePage: React.FC = () => {
               anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
             >
               <Box sx={{ p: 2 }}>
-                <Typography variant="h6" sx={{ color: '#A259FF', mb: 2 }}>Your Cart</Typography>
+                <Typography variant="h6" sx={{ color: '#A259FF', mb: 2 }}>Cart</Typography>
                 
                 {cart?.items.length === 0 ? (
                   <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', textAlign: 'center', py: 3 }}>
-                    Your cart is empty
+                    Cart is empty
                   </Typography>
                 ) : (
                   <>
@@ -888,29 +1344,48 @@ const HomePage: React.FC = () => {
             </Menu>
 
       {/* Main Content */}
-      <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Container 
+        maxWidth="xl" 
+        sx={{ 
+          py: isSmallMobile ? 2 : 4,
+          px: isSmallMobile ? 1 : 2
+        }}
+      >
         {/* Tier Progress Component */}
-        <TierProgress onTierUpgrade={(newTier) => {
-          setSnackbarMessage(`🎉 Congratulations! You've been upgraded to ${newTier.tier_name.charAt(0).toUpperCase() + newTier.tier_name.slice(1)} tier!`);
-          setSnackbarOpen(true);
-        }} />
+        <TierProgress 
+          onTierUpgrade={(newTier) => {
+            setSnackbarMessage(`🎉 Congratulations! You've been upgraded to ${newTier.tier_name.charAt(0).toUpperCase() + newTier.tier_name.slice(1)} tier!`);
+            setSnackbarOpen(true);
+          }}
+          onShowSnackbar={onShowSnackbar}
+        />
+        
+        {/* Timezone-Specific Promotions */}
+        <TimezonePromotions variant="compact" />
         
         {/* Hero Banner with New Arrivals */}
-        <Paper sx={{ 
-          position: 'relative', 
-          height: isSmallScreen ? 300 : 400, 
-          mb: 4, 
-          borderRadius: 3, 
-          overflow: 'hidden', 
-          backgroundImage: currentBannerVoucher ? `linear-gradient(rgba(10, 10, 20, 0.7), rgba(10, 10, 20, 0.7)), url(${currentBannerVoucher.image_url})` : 'none',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: '1px solid rgba(162, 89, 255, 0.4)',
-          backdropFilter: 'blur(5px)'
-        }}>
+        <Paper 
+          onTouchStart={handleSwipeStart}
+          onTouchEnd={handleSwipeEnd}
+          sx={{ 
+            position: 'relative', 
+            height: isSmallScreen ? 300 : 400, 
+            mb: 4, 
+            borderRadius: 3, 
+            overflow: 'hidden', 
+            backgroundImage: currentBannerVoucher ? `linear-gradient(rgba(10, 10, 20, 0.7), rgba(10, 10, 20, 0.7)), url(${currentBannerVoucher.image_url})` : 'none',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1px solid rgba(162, 89, 255, 0.4)',
+            backdropFilter: 'blur(5px)',
+            cursor: isSmallScreen ? 'grab' : 'default',
+            '&:active': {
+              cursor: isSmallScreen ? 'grabbing' : 'default',
+            }
+          }}>
           {/* Navigation Arrows - Hidden on mobile */}
           {!isSmallScreen && (
             <>
@@ -1004,7 +1479,13 @@ const HomePage: React.FC = () => {
                   py: isSmallScreen ? 1 : 1.5,
                   fontWeight: 600,
                   fontSize: isSmallScreen ? '1rem' : '1.1rem',
-                  '&:hover': { background: 'linear-gradient(45deg, #9147e6 30%, #7a36d9 90%)' },
+                  ...microInteractions.clickScale,
+                  ...microInteractions.ripple,
+                  '&:hover': { 
+                    background: 'linear-gradient(45deg, #9147e6 30%, #7a36d9 90%)',
+                    transform: 'translateY(-3px)',
+                    boxShadow: '0 8px 25px rgba(162, 89, 255, 0.4)',
+                  },
                 }}
               >
                 Redeem Now
@@ -1045,6 +1526,174 @@ const HomePage: React.FC = () => {
             Redeem your loyalty points for exclusive rewards and experiences
           </Typography>
         </Box>
+
+        {/* Personalized Recommendations Section */}
+        {showPersonalized && userProfile && (
+          <Box sx={{ mb: 4 }}>
+            <Paper sx={{ 
+              bgcolor: 'rgba(20, 20, 30, 0.7)', 
+              p: 3, 
+              borderRadius: 3,
+              border: '1px solid rgba(162, 89, 255, 0.3)',
+              backdropFilter: 'blur(10px)',
+              background: 'linear-gradient(135deg, rgba(162, 89, 255, 0.1) 0%, rgba(20, 20, 30, 0.7) 100%)',
+              ...animationPresets.pageEnter,
+              ...microInteractions.hoverLift
+            }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="h5" sx={{ color: '#A259FF', fontWeight: 600 }}>
+                    🎯 Personalized for You
+                  </Typography>
+                  <Chip 
+                    label="AI Powered" 
+                    size="small" 
+                    sx={{ 
+                      bgcolor: 'rgba(162, 89, 255, 0.2)', 
+                      color: '#A259FF',
+                      fontSize: '0.7rem'
+                    }} 
+                  />
+                </Box>
+                <IconButton 
+                  onClick={() => setShowPersonalized(false)}
+                  sx={{ color: 'rgba(255, 255, 255, 0.5)' }}
+                >
+                  <Close />
+                </IconButton>
+              </Box>
+              
+              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 3 }}>
+                Based on your tier, points, and preferences, here are vouchers we think you'll love:
+              </Typography>
+
+              <Box sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
+                gap: 2
+              }}>
+                {generatePersonalizedRecommendations().map((voucher, index) => (
+                  <Card 
+                    key={voucher.id} 
+                    sx={{ 
+                      position: 'relative',
+                      borderRadius: 2,
+                      border: '1px solid rgba(162, 89, 255, 0.2)',
+                      overflow: 'hidden',
+                      ...createStaggerAnimation(index * 0.1),
+                      ...animationPresets.cardHover,
+                      ...microInteractions.hoverLift,
+                      '&:hover': {
+                        transform: 'translateY(-4px)',
+                        boxShadow: '0 8px 25px rgba(162, 89, 255, 0.3)',
+                        border: '1px solid rgba(162, 89, 255, 0.5)'
+                      },
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundImage: voucher.image_url ? 
+                          `linear-gradient(rgba(30, 30, 50, 0.7), rgba(30, 30, 50, 0.7)), url(${voucher.image_url})` :
+                          'linear-gradient(rgba(30, 30, 50, 0.9), rgba(30, 30, 50, 0.9))',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        backgroundRepeat: 'no-repeat',
+                        zIndex: 0,
+                        opacity: 0.5,
+                        transition: 'opacity 0.3s ease'
+                      },
+                      '&:hover::before': {
+                        opacity: 0.6
+                      }
+                    }}
+                  >
+                    <CardContent sx={{ 
+                      p: 2, 
+                      position: 'relative', 
+                      zIndex: 1,
+                      background: 'rgba(0, 0, 0, 0.1)',
+                      backdropFilter: 'blur(2px)'
+                    }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                        <Typography variant="h6" sx={{ color: 'white', fontWeight: 600, fontSize: '1rem' }}>
+                          {voucher.title}
+                        </Typography>
+                        <Chip 
+                          label="Recommended" 
+                          size="small" 
+                          sx={{ 
+                            bgcolor: '#4CAF50', 
+                            color: 'white',
+                            fontSize: '0.6rem',
+                            height: 20
+                          }} 
+                        />
+                      </Box>
+                      
+                      <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 2, fontSize: '0.85rem' }}>
+                        {voucher.description.length > 80 ? `${voucher.description.substring(0, 80)}...` : voucher.description}
+                      </Typography>
+                      
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="h6" sx={{ color: '#A259FF', fontWeight: 'bold' }}>
+                          {voucher.points} pts
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#4CAF50', fontWeight: 600 }}>
+                          {voucher.discount}
+                        </Typography>
+                      </Box>
+                      
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          onClick={() => handleRedeemNow(voucher)}
+                          sx={{
+                            flex: 1,
+                            background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
+                            fontSize: '0.8rem',
+                            py: 0.5,
+                            ...microInteractions.clickScale,
+                            ...microInteractions.ripple,
+                            '&:hover': {
+                              transform: 'translateY(-2px)',
+                              boxShadow: '0 4px 15px rgba(162, 89, 255, 0.4)'
+                            }
+                          }}
+                        >
+                          Redeem
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => handleAddToCart(voucher)}
+                          sx={{
+                            borderColor: '#A259FF',
+                            color: '#A259FF',
+                            fontSize: '0.8rem',
+                            py: 0.5,
+                            ...microInteractions.clickScale,
+                            ...microInteractions.ripple,
+                            '&:hover': {
+                              borderColor: '#8a3ffb',
+                              background: 'rgba(162, 89, 255, 0.1)',
+                              transform: 'translateY(-2px)'
+                            }
+                          }}
+                        >
+                          Add
+                        </Button>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+            </Paper>
+          </Box>
+        )}
 
         {/* Category Tabs */}
         <Paper sx={{ 
@@ -1188,8 +1837,15 @@ const HomePage: React.FC = () => {
           gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
           gap: 3
         }}>
-          {filteredVouchers.map((voucher) => (
-            <Box key={voucher.id}>
+          {filteredVouchers.map((voucher, index) => (
+            <Box 
+              key={voucher.id}
+              sx={{
+                ...createStaggerAnimation(index * 0.1),
+                ...animationPresets.cardHover,
+                ...microInteractions.hoverLift
+              }}
+            >
               <Card sx={{ 
                 bgcolor: 'rgba(20, 20, 30, 0.7)', 
                 border: '1px solid rgba(162, 89, 255, 0.3)', 
@@ -1206,7 +1862,21 @@ const HomePage: React.FC = () => {
                 } 
               }}>
                 <Box sx={{ position: 'relative', height: 200, overflow: 'hidden' }}>
-                  <Box component="img" src={voucher.image_url} alt={voucher.title} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <Box 
+                    component="img" 
+                    src={voucher.image_url} 
+                    alt={voucher.title} 
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60';
+                    }}
+                    sx={{ 
+                      width: '100%', 
+                      height: '100%', 
+                      objectFit: 'cover',
+                      backgroundColor: 'rgba(162, 89, 255, 0.1)'
+                    }} 
+                  />
                   <Chip label={voucher.category} size="small" sx={{ 
                     position: 'absolute', 
                     top: 10, 
@@ -1386,7 +2056,22 @@ const HomePage: React.FC = () => {
             <Button
               size="small"
               variant="contained"
-              onClick={() => { setLogoutConfirmOpen(false); navigate('/login'); setSnackbarMessage('Logged out successfully'); setSnackbarOpen(true); }}
+              onClick={() => { 
+                setLogoutConfirmOpen(false); 
+                if (onLogout) {
+                  onLogout();
+                } else {
+                  // Fallback: clear tokens and show message
+                  localStorage.removeItem('access_token');
+                  localStorage.removeItem('refresh_token');
+                  localStorage.removeItem('userName');
+                  localStorage.removeItem('userEmail');
+                  localStorage.removeItem('biometricEnabled');
+                  localStorage.removeItem('biometricCredId');
+                  setSnackbarMessage('Logged out successfully'); 
+                  setSnackbarOpen(true);
+                }
+              }}
               sx={{ background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)' }}
             >
               Logout
@@ -1416,6 +2101,83 @@ const HomePage: React.FC = () => {
           {snackbarMessage}
         </Alert>
       </Snackbar>
+
+      {/* Mobile Floating Action Button */}
+      {isSmallScreen && (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 20,
+            right: 20,
+            zIndex: 1000,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1
+          }}
+        >
+          {/* Quick Cart Access */}
+          <IconButton
+            onClick={() => setCartAnchorEl(document.body)}
+            sx={{
+              bgcolor: '#A259FF',
+              color: 'white',
+              width: 56,
+              height: 56,
+              boxShadow: '0 4px 20px rgba(162, 89, 255, 0.4)',
+              '&:hover': {
+                bgcolor: '#8B4FE6',
+                transform: 'scale(1.1)',
+              },
+              transition: 'all 0.2s ease-in-out'
+            }}
+          >
+            <Badge badgeContent={totalCartItems} color="error">
+              <ShoppingCartIcon />
+            </Badge>
+          </IconButton>
+
+          {/* Quick Profile Access */}
+          <IconButton
+            onClick={() => setAnchorEl(document.body)}
+            sx={{
+              bgcolor: 'rgba(20, 20, 30, 0.9)',
+              color: 'white',
+              width: 48,
+              height: 48,
+              border: '1px solid rgba(162, 89, 255, 0.3)',
+              '&:hover': {
+                bgcolor: 'rgba(162, 89, 255, 0.2)',
+                transform: 'scale(1.05)',
+              },
+              transition: 'all 0.2s ease-in-out'
+            }}
+          >
+            <PersonIcon />
+          </IconButton>
+        </Box>
+      )}
+
+      {/* Mini-Games Dialog */}
+      <MiniGames
+        open={miniGamesOpen}
+        onClose={() => setMiniGamesOpen(false)}
+        onGameComplete={() => {}}
+        onShowSnackbar={onShowSnackbar}
+      />
+
+      {/* Leaderboard Dialog */}
+      <Leaderboard
+        open={leaderboardOpen}
+        onClose={() => setLeaderboardOpen(false)}
+        onShowSnackbar={onShowSnackbar}
+      />
+
+      {/* Edit Profile Dialog */}
+      <EditProfilePage
+        open={editProfileOpen}
+        onClose={() => setEditProfileOpen(false)}
+        onShowSnackbar={onShowSnackbar}
+      />
     </Box>
   );
 };

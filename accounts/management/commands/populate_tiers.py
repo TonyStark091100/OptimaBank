@@ -58,7 +58,7 @@ class Command(BaseCommand):
             )
             if created:
                 created_tiers += 1
-                self.stdout.write(f"Created {tier.get_tier_name_display()} tier")
+                self.stdout.write(f"Created {tier.get_tier_name_display()} tier")  # type: ignore
 
         # Create tier benefits
         benefits_data = [

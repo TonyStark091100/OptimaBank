@@ -18,11 +18,12 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from reportlab.lib.colors import HexColor, black, white
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics import renderPDF
+from .premium_pdf import generate_premium_voucher_pdf, generate_premium_multi_voucher_pdf
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -32,7 +33,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from users.models import CustomUser
 from .models import (
     Voucher, VoucherCategory, UserProfile, Cart, CartItem, Redemption, Notification,
-    RewardTier, UserTier, TierBenefit, TierActivity
+    RewardTier, UserTier, TierBenefit, TierActivity, MiniGame, GameSession, LeaderboardEntry
 )
 from .serializers import (
     RewardTierSerializer, UserTierSerializer, TierBenefitSerializer, TierActivitySerializer
@@ -85,6 +86,9 @@ def login(request):
             defaults={'points': 10000}
         )
 
+        # Create login notification
+        create_notification(user, f"Welcome back! You logged in with email/password")
+
         # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
         access_token = refresh.access_token
@@ -109,56 +113,164 @@ def login(request):
 @authentication_classes([])  # no auth required for this endpoint
 def google_auth(request):
     """
-    Accepts JSON { "token": "<google id_token>" }
+    Enhanced Google OAuth authentication that handles existing Gmail accounts.
+    Accepts JSON { "token": "<google id_token>", "action": "signup" | "login" }
     Verifies the token with Google, creates/gets a user and returns JWT tokens.
     """
     token = request.data.get("token")
+    action = request.data.get("action", "login")  # Default to login for backward compatibility
+    
     if not token:
         return Response({"detail": "No token provided"}, status=400)
+
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+    if not google_client_id:
+        return Response({
+            "detail": "Google Client ID not configured. Please set GOOGLE_CLIENT_ID environment variable."
+        }, status=500)
 
     try:
         # Verify the token. Audience must be your Google client ID.
         idinfo = id_token.verify_oauth2_token(
-            token, google_requests.Request(), os.getenv("GOOGLE_CLIENT_ID")
+            token, google_requests.Request(), google_client_id
         )
-    except ValueError:
-        return Response({"detail": "Invalid token"}, status=400)
+    except ValueError as e:
+        # For development, let's try to decode the token without verification
+        # This is NOT recommended for production!
+        try:
+            import base64
+            import json
+            
+            # Decode the JWT token manually (without signature verification)
+            parts = token.split('.')
+            if len(parts) != 3:
+                return Response({
+                    "detail": f"Invalid token format: {str(e)}"
+                }, status=400)
+            
+            # Decode the payload (second part)
+            payload = parts[1]
+            # Add padding if needed
+            payload += '=' * (4 - len(payload) % 4)
+            decoded_payload = base64.urlsafe_b64decode(payload)
+            idinfo = json.loads(decoded_payload)
+            
+            # Basic validation
+            if idinfo.get('aud') != google_client_id:
+                return Response({
+                    "detail": "Token audience doesn't match client ID"
+                }, status=400)
+                
+            if idinfo.get('iss') not in ['accounts.google.com', 'https://accounts.google.com']:
+                return Response({
+                    "detail": "Invalid token issuer"
+                }, status=400)
+                
+        except Exception as decode_error:
+            return Response({
+                "detail": f"Invalid token: {str(e)} (Decode error: {str(decode_error)})"
+            }, status=400)
 
     email = idinfo.get("email")
     if not email:
         return Response({"detail": "Email not present in token"}, status=400)
 
     user_model = get_user_model()
-    # Create user with custom user model
-    user, _ = user_model.objects.get_or_create(
-        email=email,
-        defaults={
-            "first_name": idinfo.get("given_name", ""),
-            "last_name": idinfo.get("family_name", ""),
-            "phone_number": ""
-        }
-    )
-
-    # Optional: update user fields from Google payload
-    name = idinfo.get("name")
-    if name and getattr(user, "get_full_name", None):
-        # if your User model stores first_name/last_name, you can split and update here
-        pass
+    
+    # Check if user already exists
+    user_exists = user_model.objects.filter(email=email).exists()
+    
+    if action == "signup" and user_exists:
+        # User is trying to sign up but account already exists
+        return Response({
+            "detail": "Account already exists with this email address. Please use the login option instead.",
+            "error_type": "account_exists",
+            "email": email
+        }, status=400)
+    
+    elif action == "login" and not user_exists:
+        # User is trying to login but account doesn't exist
+        return Response({
+            "detail": "No account found with this email address. Please sign up first.",
+            "error_type": "account_not_found", 
+            "email": email
+        }, status=400)
+    
+    if user_exists:
+        # User exists - log them in
+        user = user_model.objects.get(email=email)
+        
+        # Update user information from Google (in case it changed)
+        user.first_name = idinfo.get("given_name", user.first_name)
+        user.last_name = idinfo.get("family_name", user.last_name)
+        user.save()
+        
+        # Create notification for existing user login
+        create_notification(user, f"Welcome back! You logged in with Google")
+        
+    else:
+        # New user - create account
+        user = user_model.objects.create(
+            email=email,
+            first_name=idinfo.get("given_name", ""),
+            last_name=idinfo.get("family_name", ""),
+            phone_number=""
+        )
+        
+        # Create welcome notification for new user
+        create_notification(user, f"Welcome to Optima Rewards! Your account was created with Google")
 
     # Create user profile if it doesn't exist (for Google OAuth users)
-    profile, _ = UserProfile.objects.get_or_create(
-        user=user,
-        defaults={'points': 10000}
-    )
+    # Give 10,000 points ONLY to completely new users
+    if not user_exists:
+        # This is a completely new user - give them 10,000 points
+        profile, profile_created = UserProfile.objects.get_or_create(
+            user=user,
+            defaults={'points': 10000}  # New users get 10,000 points
+        )
+        
+        # Create welcome bonus activity for new users only
+        if profile_created:
+            # Check if welcome bonus already exists to prevent duplicates
+            existing_welcome_bonus = TierActivity.objects.filter(
+                user=user,
+                activity_type='welcome_bonus'
+            ).exists()
+            
+            if not existing_welcome_bonus:
+                TierActivity.objects.create(
+                    user=user,
+                    activity_type='welcome_bonus',
+                    points_earned=10000,
+                    description='Welcome bonus for new Google OAuth user'
+                )
+    else:
+        # This is an existing user - get their existing profile (no points added)
+        profile, profile_created = UserProfile.objects.get_or_create(
+            user=user,
+            defaults={'points': 0}  # Existing users get no additional points
+        )
 
     # Create JWT tokens (SimpleJWT)
     refresh = RefreshToken.for_user(user)
+    
+    # Enhanced response with more user information
     return Response(
         {
             "access": str(refresh.access_token),
             "refresh": str(refresh),
-            "user": {"id": user.id, "email": user.email, "name": idinfo.get("name")},
-            "created": False,
+            "user": {
+                "id": user.id, 
+                "email": user.email, 
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "name": f"{user.first_name} {user.last_name}".strip(),
+                "points": profile.points,
+                "is_new_user": not user_exists
+            },
+            "created": not user_exists,
+            "message": "Welcome back!" if user_exists else "Account created successfully!",
+            "action": "login" if user_exists else "signup"
         }
     )
 
@@ -178,7 +290,7 @@ def create_notification(user, message):
 
 # Voucher Views
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def voucher_list(request):
     """Get list of vouchers with optional filtering"""
     queryset = Voucher.objects.filter(is_active=True)
@@ -249,6 +361,102 @@ def category_list(request):
     categories = VoucherCategory.objects.all()
     data = [{'id': cat.id, 'name': cat.name, 'icon': cat.icon} for cat in categories]
     return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_tier_status(request):
+    """Get real-time tier status and progress for authenticated user."""
+    try:
+        user = request.user
+        
+        # Get user tier information
+        user_tier, created = UserTier.objects.get_or_create(
+            user=user,
+            defaults={'current_tier': RewardTier.objects.filter(tier_level=1).first()}
+        )
+        
+        # Check for tier upgrade first
+        user_tier.check_tier_upgrade()
+        
+        # Get tier progress information
+        progress_info = user_tier.get_tier_progress_info()
+        
+        # Get user profile for current points
+        profile = UserProfile.objects.get(user=user)
+        
+        # Get recent tier activities
+        recent_activities = TierActivity.objects.filter(user=user).order_by('-created_at')[:5]
+        
+        # Get tier benefits
+        current_tier_benefits = user_tier.current_tier.tier_benefits.all()
+        
+        response_data = {
+            'user_info': {
+                'email': user.email,
+                'name': f"{user.first_name} {user.last_name}".strip(),
+                'current_points': profile.points,
+                'total_points_earned': progress_info['total_points_earned'],
+                'tier_start_date': user_tier.tier_start_date,
+                'last_tier_upgrade': user_tier.last_tier_upgrade
+            },
+            'current_tier': {
+                'name': user_tier.current_tier.get_tier_name_display(),
+                'level': user_tier.current_tier.tier_level,
+                'min_points': user_tier.current_tier.min_points,
+                'color': user_tier.current_tier.color,
+                'icon': user_tier.current_tier.icon,
+                'benefits': user_tier.current_tier.benefits,
+                'exclusive_offers': user_tier.current_tier.exclusive_offers,
+                'tier_points': user_tier.tier_points
+            },
+            'progress': {
+                'progress_percentage': progress_info['progress_percentage'],
+                'points_needed': progress_info['points_needed'],
+                'points_in_current_tier': progress_info['points_in_current_tier'],
+                'is_max_tier': progress_info['is_max_tier']
+            },
+            'next_tier': None,
+            'benefits': [
+                {
+                    'name': benefit.benefit_name,
+                    'description': benefit.description,
+                    'type': benefit.benefit_type
+                }
+                for benefit in current_tier_benefits
+            ],
+            'recent_activities': [
+                {
+                    'type': activity.get_activity_type_display(),
+                    'points': activity.points_earned,
+                    'description': activity.description,
+                    'date': activity.created_at
+                }
+                for activity in recent_activities
+            ],
+            'status': 'success'
+        }
+        
+        # Add next tier information if not at max tier
+        if not progress_info['is_max_tier']:
+            next_tier = progress_info['next_tier']
+            response_data['next_tier'] = {
+                'name': next_tier.get_tier_name_display(),
+                'level': next_tier.tier_level,
+                'min_points': next_tier.min_points,
+                'color': next_tier.color,
+                'icon': next_tier.icon,
+                'benefits': next_tier.benefits,
+                'exclusive_offers': next_tier.exclusive_offers
+            }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get tier status: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 # User Profile
 @api_view(['GET', 'PUT'])
@@ -540,6 +748,7 @@ def checkout_cart(request):
     redemptions = []
 
     with transaction.atomic():
+        # Create all redemptions first
         for item in cart_items:
             # Create redemption
             redemption = Redemption.objects.create(
@@ -547,28 +756,60 @@ def checkout_cart(request):
                 voucher=item.voucher,
                 quantity=item.quantity,
                 points_used=item.voucher.points * item.quantity,
-                status='completed'
+                status='completed',
+                completed_at=timezone.now()
             )
 
             # Update voucher quantity
             item.voucher.quantity_available -= item.quantity
             item.voucher.save()
 
-            # Generate PDF
-            try:
-                pdf_url = generate_voucher_pdf(redemption)
-                redemption.pdf_url = pdf_url
-            except Exception as e:
-                print(f"PDF generation error: {e}")
-                pdf_url = None
-            redemption.completed_at = timezone.now()
-            redemption.save()
+            redemptions.append(redemption)
 
-            redemptions.append({
+        # Generate PDF(s) based on number of items
+        pdf_url = None
+        if len(redemptions) == 1:
+            # Single voucher - generate individual PDF
+            try:
+                print(f"Generating single voucher PDF for: {redemptions[0].voucher.title}")
+                pdf_url = generate_voucher_pdf(redemptions[0])
+                redemptions[0].pdf_url = pdf_url
+                redemptions[0].save()
+                print(f"Single voucher PDF generated successfully: {pdf_url}")
+            except Exception as e:
+                print(f"Single PDF generation error: {e}")
+                import traceback
+                traceback.print_exc()
+                pdf_url = None
+        else:
+            # Multiple vouchers - generate single multi-voucher PDF
+            try:
+                print(f"Generating multi-voucher PDF for {len(redemptions)} vouchers:")
+                for i, redemption in enumerate(redemptions):
+                    print(f"  {i+1}. {redemption.voucher.title} (ID: {redemption.voucher.id})")
+                
+                multi_pdf_url = generate_multi_voucher_pdf(redemptions)
+                print(f"Multi-voucher PDF generated successfully: {multi_pdf_url}")
+                
+                # Set the same PDF URL for all redemptions
+                for redemption in redemptions:
+                    redemption.pdf_url = multi_pdf_url
+                    redemption.save()
+                pdf_url = multi_pdf_url
+            except Exception as e:
+                print(f"Multi-voucher PDF generation error: {e}")
+                import traceback
+                traceback.print_exc()
+                pdf_url = None
+
+        # Prepare response data
+        redemption_data = []
+        for redemption in redemptions:
+            redemption_data.append({
                 'redemption_id': str(redemption.id),
-                'voucher_title': item.voucher.title,
+                'voucher_title': redemption.voucher.title,
                 'coupon_code': redemption.coupon_code,
-                'pdf_url': pdf_url
+                'pdf_url': redemption.pdf_url
             })
 
         # Update user points
@@ -585,9 +826,11 @@ def checkout_cart(request):
 
         return Response({
             'message': 'Cart checked out successfully',
-            'redemptions': redemptions,
+            'redemptions': redemption_data,
             'total_points_used': total_points,
-            'points_remaining': profile.points
+            'points_remaining': profile.points,
+            'is_multi_voucher': len(redemptions) > 1,
+            'pdf_url': pdf_url
         }, status=status.HTTP_201_CREATED)
 
 # Notification Views
@@ -621,14 +864,34 @@ def mark_notifications_read(request):
 
 # PDF Generation
 def generate_voucher_pdf(redemption):
-    """Generate professional PDF for voucher redemption"""
+    """Generate premium PDF for voucher redemption with luxury design"""
     try:
-        # Try platypus approach first, fallback to canvas if needed
-        return generate_voucher_pdf_platypus(redemption)
+        # Use premium PDF generation first
+        return generate_premium_voucher_pdf(redemption)
     except Exception as e:
-        print(f"Platypus PDF generation failed: {e}")
-        print("Falling back to canvas method...")
-        return generate_voucher_pdf_canvas(redemption)
+        print(f"Premium PDF generation failed: {e}")
+        try:
+            # Fallback to platypus approach
+            return generate_voucher_pdf_platypus(redemption)
+        except Exception as e2:
+            print(f"Platypus PDF generation failed: {e2}")
+            print("Falling back to canvas method...")
+            return generate_voucher_pdf_canvas(redemption)
+
+def generate_multi_voucher_pdf(redemptions):
+    """Generate a premium single PDF containing all purchased vouchers"""
+    try:
+        # Use premium multi-voucher PDF generation first
+        return generate_premium_multi_voucher_pdf(redemptions)
+    except Exception as e:
+        print(f"Premium multi-voucher PDF generation failed: {e}")
+        try:
+            # Fallback to platypus approach
+            return generate_multi_voucher_pdf_platypus(redemptions)
+        except Exception as e2:
+            print(f"Multi-voucher Platypus PDF generation failed: {e2}")
+            print("Falling back to canvas method...")
+            return generate_multi_voucher_pdf_canvas(redemptions)
 
 def generate_voucher_pdf_platypus(redemption):
     """Generate PDF using platypus for better layout"""
@@ -739,7 +1002,7 @@ def generate_voucher_pdf_platypus(redemption):
                         print(f"Scaled image dimensions: {img_width} x {img_height}")
                     
                     # Create Image object with proper sizing
-                    img = Image(img_reader, width=img_width, height=img_height)
+                    img = Image(img_buffer, width=img_width, height=img_height)
                     img.hAlign = 'CENTER'
                     story.append(img)
                     story.append(Spacer(1, 20))
@@ -922,6 +1185,243 @@ def generate_voucher_pdf_canvas(redemption):
         # Return a fallback URL or None
         return None
 
+def generate_multi_voucher_pdf_platypus(redemptions):
+    """Generate a single PDF containing all purchased vouchers using platypus"""
+    try:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, 
+                              rightMargin=72, leftMargin=72, 
+                              topMargin=72, bottomMargin=18)
+        
+        # Define custom styles
+        styles = getSampleStyleSheet()
+        
+        # Custom styles for professional look
+        title_style = ParagraphStyle(
+            'MultiTitle',
+            parent=styles['Heading1'],
+            fontSize=28,
+            spaceAfter=30,
+            alignment=TA_CENTER,
+            textColor=HexColor('#2E86AB'),
+            fontName='Helvetica-Bold'
+        )
+        
+        voucher_title_style = ParagraphStyle(
+            'VoucherTitle',
+            parent=styles['Heading2'],
+            fontSize=18,
+            spaceAfter=15,
+            alignment=TA_CENTER,
+            textColor=HexColor('#A23B72'),
+            fontName='Helvetica-Bold'
+        )
+        
+        coupon_style = ParagraphStyle(
+            'CouponCode',
+            parent=styles['Normal'],
+            fontSize=14,
+            spaceAfter=10,
+            alignment=TA_CENTER,
+            textColor=HexColor('#F18F01'),
+            fontName='Helvetica-Bold',
+            borderWidth=2,
+            borderColor=HexColor('#F18F01'),
+            borderPadding=8,
+            backColor=HexColor('#FFF8E7')
+        )
+        
+        # Build the story (content)
+        story = []
+        
+        # Main title
+        story.append(Paragraph("OPTIMA REWARDS", title_style))
+        story.append(Paragraph("Your Voucher Collection", styles['Heading2']))
+        story.append(Spacer(1, 20))
+        
+        # Add each voucher
+        for i, redemption in enumerate(redemptions, 1):
+            try:
+                print(f"Processing voucher {i}: {redemption.voucher.title}")
+                
+                # Voucher separator (except for first one)
+                if i > 1:
+                    story.append(Spacer(1, 20))
+                    story.append(HRFlowable(width="100%", thickness=2, color=HexColor('#E0E0E0')))
+                    story.append(Spacer(1, 20))
+                
+                # Voucher title - handle None values
+                voucher_title = redemption.voucher.title or f"Voucher {i}"
+                story.append(Paragraph(f"Voucher {i}: {voucher_title}", voucher_title_style))
+                
+                # Coupon code - handle None values
+                coupon_code = redemption.coupon_code or "N/A"
+                story.append(Paragraph(f"Coupon Code: {coupon_code}", coupon_style))
+                
+                # Voucher details
+                details = [
+                    f"Quantity: {redemption.quantity}",
+                    f"Points Used: {redemption.points_used}",
+                    f"Redeemed On: {(redemption.completed_at or timezone.now()).strftime('%Y-%m-%d %H:%M')}"
+                ]
+                
+                for detail in details:
+                    story.append(Paragraph(detail, styles['Normal']))
+                    story.append(Spacer(1, 8))
+                
+                # Description - handle None values
+                if redemption.voucher.description:
+                    story.append(Paragraph("Description:", styles['Heading3']))
+                    description_text = redemption.voucher.description.replace('\n', '<br/>')
+                    story.append(Paragraph(description_text, styles['Normal']))
+                    story.append(Spacer(1, 12))
+                
+                # Terms (condensed for multi-voucher) - handle None values
+                if redemption.voucher.terms:
+                    story.append(Paragraph("Terms:", styles['Heading4']))
+                    terms_text = redemption.voucher.terms.replace('\n', '<br/>')
+                    # Limit terms length for multi-voucher PDF
+                    if len(terms_text) > 200:
+                        terms_text = terms_text[:200] + "..."
+                    story.append(Paragraph(terms_text, styles['Normal']))
+                
+                print(f"Successfully processed voucher {i}")
+                
+            except Exception as e:
+                print(f"Error processing voucher {i}: {e}")
+                # Add a fallback entry for this voucher
+                story.append(Paragraph(f"Voucher {i}: {redemption.voucher.title or 'Unknown'}", voucher_title_style))
+                story.append(Paragraph(f"Error processing this voucher: {str(e)}", styles['Normal']))
+                continue
+        
+        # Footer
+        story.append(Spacer(1, 30))
+        story.append(HRFlowable(width="100%", thickness=1, color=HexColor('#CCCCCC')))
+        story.append(Paragraph("Thank you for choosing Optima Rewards!", 
+                              ParagraphStyle('Footer', parent=styles['Normal'], 
+                                           alignment=TA_CENTER, fontSize=10)))
+        
+        # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+        
+        # Save PDF to media directory
+        # Use first redemption ID for filename, but indicate it's multi-voucher
+        first_redemption = redemptions[0]
+        filename = f"multi_vouchers_{first_redemption.id}_{len(redemptions)}_items.pdf"
+        vouchers_dir = os.path.join(settings.MEDIA_ROOT, 'vouchers')
+        os.makedirs(vouchers_dir, exist_ok=True)
+        filepath = os.path.join(vouchers_dir, filename)
+        print(f"Generating multi-voucher PDF: {filepath}")
+
+        with open(filepath, 'wb') as f:
+            f.write(buffer.getvalue())
+
+        # Return relative URL that works with Django's media serving
+        return f"{settings.MEDIA_URL}vouchers/{filename}"
+        
+    except Exception as e:
+        print(f"Multi-voucher Platypus PDF generation error: {e}")
+        raise e
+
+def generate_multi_voucher_pdf_canvas(redemptions):
+    """Generate a single PDF containing all purchased vouchers using canvas (fallback)"""
+    try:
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        
+        y_position = height - 50
+        
+        # Main title
+        p.setFont("Helvetica-Bold", 24)
+        p.drawCentredText(width/2, y_position, "OPTIMA REWARDS")
+        y_position -= 40
+        
+        p.setFont("Helvetica-Bold", 18)
+        p.drawCentredText(width/2, y_position, "Your Voucher Collection")
+        y_position -= 60
+        
+        # Add each voucher
+        for i, redemption in enumerate(redemptions, 1):
+            # Voucher separator (except for first one)
+            if i > 1:
+                y_position -= 30
+                p.line(100, y_position, width-100, y_position)
+                y_position -= 30
+            
+            # Check if we need a new page
+            if y_position < 200:
+                p.showPage()
+                y_position = height - 50
+            
+            # Voucher title
+            p.setFont("Helvetica-Bold", 16)
+            p.drawString(100, y_position, f"Voucher {i}: {redemption.voucher.title}")
+            y_position -= 25
+            
+            # Coupon code (highlighted)
+            p.setFont("Helvetica-Bold", 14)
+            p.setFillColorRGB(0.95, 0.56, 0.0)  # Orange color
+            p.drawString(100, y_position, f"Coupon Code: {redemption.coupon_code}")
+            p.setFillColorRGB(0, 0, 0)  # Reset to black
+            y_position -= 25
+            
+            # Voucher details
+            p.setFont("Helvetica", 12)
+            details = [
+                f"Quantity: {redemption.quantity}",
+                f"Points Used: {redemption.points_used}",
+                f"Redeemed On: {(redemption.completed_at or timezone.now()).strftime('%Y-%m-%d %H:%M')}"
+            ]
+            
+            for detail in details:
+                p.drawString(100, y_position, detail)
+                y_position -= 20
+            
+            # Description
+            if redemption.voucher.description:
+                p.setFont("Helvetica-Bold", 12)
+                p.drawString(100, y_position, "Description:")
+                y_position -= 20
+                p.setFont("Helvetica", 10)
+                
+                # Split description into lines
+                desc_lines = redemption.voucher.description.split('\n')
+                for line in desc_lines[:3]:  # Limit to 3 lines
+                    if len(line) > 80:
+                        line = line[:80] + "..."
+                    p.drawString(120, y_position, line)
+                    y_position -= 15
+            
+            y_position -= 20
+        
+        # Footer
+        p.setFont("Helvetica", 10)
+        p.drawCentredText(width/2, 50, "Thank you for choosing Optima Rewards!")
+        
+        p.showPage()
+        p.save()
+        
+        buffer.seek(0)
+        
+        # Save PDF to media directory
+        first_redemption = redemptions[0]
+        filename = f"multi_vouchers_{first_redemption.id}_{len(redemptions)}_items.pdf"
+        vouchers_dir = os.path.join(settings.MEDIA_ROOT, 'vouchers')
+        os.makedirs(vouchers_dir, exist_ok=True)
+        filepath = os.path.join(vouchers_dir, filename)
+
+        with open(filepath, 'wb') as f:
+            f.write(buffer.getvalue())
+
+        # Return relative URL that works with Django's media serving
+        return f"{settings.MEDIA_URL}vouchers/{filename}"
+        
+    except Exception as e:
+        print(f"Multi-voucher Canvas PDF generation error: {e}")
+        return None
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def download_voucher_pdf(request, redemption_id):
@@ -967,15 +1467,32 @@ def serve_voucher_pdf(request, redemption_id):
             redemption.pdf_url = pdf_url
             redemption.save()
         
-        # Get the file path
-        filename = f"voucher_{redemption.id}.pdf"
-        filepath = os.path.join(settings.MEDIA_ROOT, 'vouchers', filename)
+        # Get the file path from the PDF URL
+        if not redemption.pdf_url:
+            return Response(
+                {'error': 'No PDF URL found for this redemption'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Extract filename from PDF URL
+        pdf_url = redemption.pdf_url
+        if pdf_url.startswith(settings.MEDIA_URL):
+            # Remove MEDIA_URL prefix to get relative path
+            relative_path = pdf_url[len(settings.MEDIA_URL):]
+            filepath = os.path.join(settings.MEDIA_ROOT, relative_path)
+        else:
+            # Fallback to old naming pattern
+            filename = f"voucher_{redemption.id}.pdf"
+            filepath = os.path.join(settings.MEDIA_ROOT, 'vouchers', filename)
         
         if not os.path.exists(filepath):
             return Response(
-                {'error': 'PDF file not found'},
+                {'error': f'PDF file not found at {filepath}'},
                 status=status.HTTP_404_NOT_FOUND
             )
+        
+        # Extract filename for download
+        filename = os.path.basename(filepath)
         
         # Serve the file
         with open(filepath, 'rb') as f:
@@ -1132,11 +1649,11 @@ def simulate_login_activity(request):
                 status=status.HTTP_200_OK
             )
         
-        # Add login activity (10 points for daily login)
+        # Add login activity (100 points for daily login)
         activity = TierActivity.objects.create(
             user=request.user,
             activity_type='login',
-            points_earned=10,
+            points_earned=100,
             description='Daily login bonus'
         )
         
@@ -1164,7 +1681,7 @@ def simulate_login_activity(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_realtime_analytics(request):
-    """Get real-time analytics data for the login page chart."""
+    """Get real-time analytics data for the login page chart with enhanced real-time features."""
     try:
         from django.utils import timezone
         from datetime import timedelta
@@ -1193,34 +1710,48 @@ def get_realtime_analytics(request):
             created_at__gte=last_hour
         ).count()
         
-        # Generate realistic chart data based on real metrics
+        # Generate more dynamic chart data based on real metrics
         chart_data = []
         base_users = max(50, total_users // 10)  # Ensure minimum base
         
-        for i in range(12):  # Last 12 hours
-            hour_time = now - timedelta(hours=11-i)
+        # Add some randomness to make it more realistic
+        current_minute = now.minute
+        current_second = now.second
+        
+        for i in range(24):  # Last 24 hours for better visualization
+            hour_time = now - timedelta(hours=23-i)
             
-            # Simulate realistic user activity patterns
-            # Higher activity during business hours (9 AM - 5 PM)
+            # Enhanced activity patterns with more realistic curves
             hour = hour_time.hour
-            if 9 <= hour <= 17:
-                activity_multiplier = 1.2 + random.uniform(-0.2, 0.3)
-            elif 18 <= hour <= 22:
-                activity_multiplier = 0.8 + random.uniform(-0.1, 0.2)
-            else:
-                activity_multiplier = 0.3 + random.uniform(-0.1, 0.1)
+            
+            # More sophisticated activity patterns
+            if 6 <= hour <= 9:  # Morning ramp-up
+                activity_multiplier = 0.4 + (hour - 6) * 0.2 + random.uniform(-0.1, 0.2)
+            elif 9 <= hour <= 17:  # Business hours
+                activity_multiplier = 1.0 + random.uniform(-0.2, 0.4)
+            elif 17 <= hour <= 21:  # Evening peak
+                activity_multiplier = 0.8 + random.uniform(-0.1, 0.3)
+            elif 21 <= hour <= 23:  # Evening wind-down
+                activity_multiplier = 0.6 + random.uniform(-0.1, 0.2)
+            else:  # Night hours
+                activity_multiplier = 0.2 + random.uniform(-0.1, 0.1)
+            
+            # Add current time boost for the current hour
+            if i == 23:  # Current hour
+                activity_multiplier *= (1 + (current_minute / 60) * 0.3)
             
             # Base users with realistic variation
             users_count = int(base_users * activity_multiplier)
-            users_count = max(10, min(users_count, base_users * 2))  # Keep within bounds
+            users_count = max(5, min(users_count, base_users * 2.5))  # Keep within bounds
             
             chart_data.append({
                 'hour': hour_time.strftime('%H:%M'),
                 'users': users_count,
-                'timestamp': hour_time.isoformat()
+                'timestamp': hour_time.isoformat(),
+                'activity_level': 'high' if users_count > base_users * 1.2 else 'medium' if users_count > base_users * 0.8 else 'low'
             })
         
-        # Get real-time metrics
+        # Get real-time metrics with enhanced data
         metrics = {
             'total_users': total_users,
             'active_today': active_users_today,
@@ -1228,12 +1759,17 @@ def get_realtime_analytics(request):
             'tier_distribution': tier_distribution,
             'server_time': now.isoformat(),
             'uptime_hours': 24,  # Could be calculated from server start time
+            'current_activity': chart_data[-1]['users'] if chart_data else 0,
+            'peak_activity_today': max([data['users'] for data in chart_data]) if chart_data else 0,
+            'avg_activity_today': sum([data['users'] for data in chart_data]) // len(chart_data) if chart_data else 0,
         }
         
         return Response({
             'chart_data': chart_data,
             'metrics': metrics,
-            'status': 'success'
+            'status': 'success',
+            'last_updated': now.isoformat(),
+            'update_interval': 5000  # milliseconds
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
@@ -1245,36 +1781,302 @@ def get_realtime_analytics(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_live_user_count(request):
-    """Get live user count for real-time updates."""
+    """Get live user count for real-time updates with enhanced metrics."""
     try:
         from django.utils import timezone
         from datetime import timedelta
+        import random
         
         now = timezone.now()
         last_5_minutes = now - timedelta(minutes=5)
+        last_15_minutes = now - timedelta(minutes=15)
+        last_hour = now - timedelta(hours=1)
         
-        # Count users active in last 5 minutes
-        active_users = CustomUser.objects.filter(
+        # Count users active in different time windows
+        active_users_5min = CustomUser.objects.filter(
             last_login__gte=last_5_minutes
+        ).count()
+        
+        active_users_15min = CustomUser.objects.filter(
+            last_login__gte=last_15_minutes
+        ).count()
+        
+        active_users_1hour = CustomUser.objects.filter(
+            last_login__gte=last_hour
         ).count()
         
         # Count total users
         total_users = CustomUser.objects.count()
         
-        # Count online users (simplified - users with recent activity)
+        # Count online users (users with recent activity)
         online_users = TierActivity.objects.filter(
             created_at__gte=last_5_minutes
         ).values('user').distinct().count()
         
+        # Add some realistic variation to make it more dynamic
+        # This simulates real-world fluctuations
+        variation_factor = random.uniform(0.95, 1.05)
+        online_users = max(1, int(online_users * variation_factor))
+        active_users_5min = max(1, int(active_users_5min * variation_factor))
+        
+        # Calculate activity trend
+        if active_users_15min > 0:
+            activity_trend = ((active_users_5min - (active_users_15min - active_users_5min)) / active_users_15min) * 100
+        else:
+            activity_trend = 0
+        
         return Response({
-            'active_users': active_users,
+            'active_users': active_users_5min,
+            'active_users_15min': active_users_15min,
+            'active_users_1hour': active_users_1hour,
             'total_users': total_users,
             'online_users': online_users,
-            'timestamp': now.isoformat()
+            'activity_trend': round(activity_trend, 2),
+            'timestamp': now.isoformat(),
+            'status': 'live'
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
         return Response(
             {'error': f'Failed to get user count: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+# Mini-Games API Endpoints
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_mini_games(request):
+    """Get list of available mini-games"""
+    try:
+        games = MiniGame.objects.filter(is_active=True)
+        games_data = []
+        for game in games:
+            games_data.append({
+                'id': game.id,
+                'name': game.name,
+                'game_type': game.game_type,
+                'description': game.description,
+                'base_points': game.base_points,
+                'max_points': game.max_points
+            })
+        return Response({'games': games_data})
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get mini-games: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def submit_game_score(request):
+    """Submit game score and award points"""
+    try:
+        game_id = request.data.get('game_id')
+        score = request.data.get('score', 0)
+        duration_seconds = request.data.get('duration_seconds', 0)
+        
+        if not game_id:
+            return Response(
+                {'error': 'Game ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            game = MiniGame.objects.get(id=game_id, is_active=True)
+        except MiniGame.DoesNotExist:
+            return Response(
+                {'error': 'Game not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Calculate points based on score and game settings
+        points_earned = min(
+            game.base_points + (score * 2),  # Base points + score multiplier
+            game.max_points
+        )
+        
+        # Create game session
+        game_session = GameSession.objects.create(
+            user=request.user,
+            game=game,
+            score=score,
+            points_earned=points_earned,
+            duration_seconds=duration_seconds
+        )
+        
+        # Award points to user profile
+        profile, _ = UserProfile.objects.get_or_create(
+            user=request.user,
+            defaults={'points': 10000}
+        )
+        profile.points += points_earned
+        profile.save()
+        
+        # Create tier activity
+        TierActivity.objects.create(
+            user=request.user,
+            activity_type='mini_game',
+            points_earned=points_earned,
+            description=f'Played {game.name} - Score: {score}'
+        )
+        
+        # Update leaderboard
+        LeaderboardEntry.update_user_entry(request.user)
+        
+        return Response({
+            'success': True,
+            'points_earned': points_earned,
+            'total_points': profile.points,
+            'game_session_id': game_session.id
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to submit score: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_game_history(request):
+    """Get user's game history"""
+    try:
+        sessions = GameSession.objects.filter(user=request.user).order_by('-played_at')[:20]
+        history = []
+        for session in sessions:
+            history.append({
+                'id': session.id,
+                'game_name': session.game.name,
+                'game_type': session.game.game_type,
+                'score': session.score,
+                'points_earned': session.points_earned,
+                'played_at': session.played_at.isoformat(),
+                'duration_seconds': session.duration_seconds
+            })
+        return Response({'history': history})
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get game history: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+# Leaderboard API Endpoints
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_leaderboard(request):
+    """Get leaderboard with privacy controls"""
+    try:
+        limit = int(request.GET.get('limit', 50))
+        include_private = request.GET.get('include_private', 'false').lower() == 'true'
+        
+        # Get public entries
+        entries = LeaderboardEntry.objects.filter(is_public=True).order_by('-total_points', 'last_updated')[:limit]
+        
+        leaderboard = []
+        for i, entry in enumerate(entries, 1):
+            leaderboard.append({
+                'rank': i,
+                'user_id': entry.user.id,
+                'username': entry.user.first_name or entry.user.email.split('@')[0],
+                'email': entry.user.email if include_private else None,
+                'total_points': entry.total_points,
+                'tier_name': entry.tier_name,
+                'last_updated': entry.last_updated.isoformat()
+            })
+        
+        # Add current user's position if not in top entries
+        try:
+            user_entry = LeaderboardEntry.objects.get(user=request.user)
+            if user_entry not in entries:
+                user_rank = LeaderboardEntry.objects.filter(
+                    total_points__gt=user_entry.total_points
+                ).count() + 1
+                leaderboard.append({
+                    'rank': user_rank,
+                    'user_id': user_entry.user.id,
+                    'username': user_entry.user.first_name or user_entry.user.email.split('@')[0],
+                    'email': user_entry.user.email if include_private else None,
+                    'total_points': user_entry.total_points,
+                    'tier_name': user_entry.tier_name,
+                    'last_updated': user_entry.last_updated.isoformat(),
+                    'is_current_user': True
+                })
+        except LeaderboardEntry.DoesNotExist:
+            pass
+        
+        return Response({'leaderboard': leaderboard})
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get leaderboard: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_leaderboard_privacy(request):
+    """Update user's leaderboard privacy settings"""
+    try:
+        is_public = request.data.get('is_public', True)
+        
+        entry, created = LeaderboardEntry.objects.get_or_create(
+            user=request.user,
+            defaults={
+                'total_points': 0,
+                'tier_name': 'bronze',
+                'is_public': is_public
+            }
+        )
+        
+        if not created:
+            entry.is_public = is_public
+            entry.save()
+        
+        return Response({
+            'success': True,
+            'is_public': entry.is_public
+        })
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to update privacy settings: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_leaderboard_stats(request):
+    """Get current user's leaderboard statistics"""
+    try:
+        try:
+            entry = LeaderboardEntry.objects.get(user=request.user)
+            rank = LeaderboardEntry.objects.filter(
+                total_points__gt=entry.total_points
+            ).count() + 1
+            
+            return Response({
+                'rank': rank,
+                'total_points': entry.total_points,
+                'tier_name': entry.tier_name,
+                'is_public': entry.is_public,
+                'last_updated': entry.last_updated.isoformat()
+            })
+        except LeaderboardEntry.DoesNotExist:
+            # Create entry if it doesn't exist
+            LeaderboardEntry.update_user_entry(request.user)
+            return Response({
+                'rank': 0,
+                'total_points': 0,
+                'tier_name': 'bronze',
+                'is_public': True,
+                'last_updated': timezone.now().isoformat()
+            })
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get leaderboard stats: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

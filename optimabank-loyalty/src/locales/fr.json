@@ -1,0 +1,108 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "error": "Erreur",
+    "success": "Succès",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "close": "Fermer",
+    "save": "Enregistrer",
+    "edit": "Modifier",
+    "delete": "Supprimer",
+    "back": "Retour",
+    "next": "Suivant",
+    "previous": "Précédent"
+  },
+  "auth": {
+    "login": "Connexion",
+    "signup": "S'inscrire",
+    "logout": "Déconnexion",
+    "email": "E-mail",
+    "password": "Mot de passe",
+    "confirmPassword": "Confirmer le mot de passe",
+    "firstName": "Prénom",
+    "lastName": "Nom de famille",
+    "phoneNumber": "Numéro de téléphone",
+    "welcomeBack": "Bon retour !",
+    "welcomeMessage": "Bienvenue dans le Programme de Fidélité Optima Bank",
+    "loginSuccess": "Connexion réussie !",
+    "signupSuccess": "Compte créé avec succès !",
+    "invalidCredentials": "E-mail ou mot de passe invalide",
+    "accountExists": "Un compte existe déjà avec cet e-mail",
+    "otpSent": "OTP envoyé à votre e-mail",
+    "otpVerified": "OTP vérifié avec succès",
+    "invalidOtp": "Code OTP invalide"
+  },
+  "tier": {
+    "bronze": "Bronze",
+    "silver": "Argent",
+    "gold": "Or",
+    "platinum": "Platine",
+    "tierProgress": "Progrès de Niveau",
+    "pointsNeeded": "points nécessaires",
+    "dailyBonus": "Bonus Quotidien",
+    "claimBonus": "Réclamer le Bonus",
+    "smartTips": "Conseils Intelligents",
+    "tierBenefits": "Avantages de Niveau",
+    "upgradeCongratulations": "Félicitations ! Vous avez été promu au niveau {{tier}} !"
+  },
+  "vouchers": {
+    "availableVouchers": "Bons Disponibles",
+    "personalizedForYou": "Personnalisé pour Vous",
+    "aiPowered": "Alimenté par IA",
+    "recommended": "Recommandé",
+    "addToCart": "Ajouter au Panier",
+    "redeemNow": "Échanger Maintenant",
+    "points": "points",
+    "discount": "Remise",
+    "quantityAvailable": "Quantité Disponible",
+    "termsAndConditions": "Termes et Conditions",
+    "cost": "Coût"
+  },
+  "cart": {
+    "cart": "Panier",
+    "items": "Articles",
+    "total": "Total",
+    "checkout": "Commander",
+    "empty": "Votre panier est vide",
+    "addedToCart": "{{item}} ajouté au panier !",
+    "removedFromCart": "{{item}} supprimé du panier",
+    "checkoutSuccess": "Commande réussie ! Vos bons ont été générés."
+  },
+  "profile": {
+    "profile": "Profil",
+    "editProfile": "Modifier le Profil",
+    "settings": "Paramètres",
+    "notifications": "Notifications",
+    "help": "Aide",
+    "about": "À propos",
+    "privacy": "Confidentialité",
+    "terms": "Conditions d'Utilisation"
+  },
+  "leaderboard": {
+    "leaderboard": "Classement",
+    "rank": "Rang",
+    "player": "Joueur",
+    "points": "Points",
+    "tier": "Niveau",
+    "privacySettings": "Paramètres de Confidentialité",
+    "showOnLeaderboard": "Afficher dans le Classement",
+    "hideFromLeaderboard": "Masquer du Classement"
+  },
+  "games": {
+    "miniGames": "Mini Jeux",
+    "playToEarn": "Jouer pour Gagner des Points",
+    "spinWheel": "Tourner la Roue",
+    "memoryGame": "Jeu de Mémoire",
+    "triviaQuiz": "Quiz de Culture Générale",
+    "earnPoints": "Gagner {{points}} Points",
+    "gameOver": "Jeu Terminé",
+    "playAgain": "Rejouer"
+  },
+  "notifications": {
+    "notifications": "Notifications",
+    "markAsRead": "Marquer comme Lu",
+    "markAllAsRead": "Tout Marquer comme Lu",
+    "noNotifications": "Aucune notification pour le moment"
+  }
+}

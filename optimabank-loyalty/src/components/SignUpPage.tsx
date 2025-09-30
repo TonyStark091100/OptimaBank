@@ -30,6 +30,7 @@ type SignUpPageProps = {
   onEnableBiometric: () => void;
   onRequestOtp: (email: string) => Promise<void>;
   onVerifyOtp: (email: string, otp: string, skipNavigation?: boolean) => Promise<void>;
+  onShowSnackbar: (message: string, severity: 'success' | 'error' | 'warning' | 'info') => void;
 };
 
 const SignUpPage: React.FC<SignUpPageProps> = ({
@@ -39,6 +40,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
   onEnableBiometric,
   onRequestOtp,
   onVerifyOtp,
+  onShowSnackbar,
 }) => {
   const navigate = useNavigate();
   const theme = useTheme();
@@ -72,7 +74,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
   const handleRequestOtpHandler = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formData.email || !formData.firstName || !formData.lastName || !formData.phone || !formData.password) {
-      alert("Please fill in all required fields");
+      onShowSnackbar("Please fill in all required fields", 'warning');
       return;
     }
     
@@ -85,7 +87,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
       setOtpSent(true);
     } catch (err: any) {
       console.error(err);
-      alert(`Failed to create account or send OTP: ${err.message || 'Please try again'}`);
+      onShowSnackbar(`Failed to create account or send OTP: ${err.message || 'Please try again'}`, 'error');
     }
   };
 
@@ -93,47 +95,37 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
   const handleVerifyOtpHandler = async () => {
     try {
       if (!formData.email || !formData.password) {
-        alert("Email and password are required");
+        onShowSnackbar("Email and password are required", 'warning');
         return;
       }
       
       // Verify the OTP (skip navigation, we'll handle it ourselves)
       await onVerifyOtp(formData.email, otp, true);
 
-      // After OTP verification, login the user
+      // After OTP verification, login the user using authApi
       try {
-        const response = await fetch("http://localhost:8000/accounts/login/", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            email: formData.email, 
-            password: formData.password 
-          }),
-        });
+        // Import authApi (it should be available from the parent)
+        const { authApi } = await import('../services/api');
         
-        if (response.ok) {
-          const loginData = await response.json();
-          
-          // Store tokens
-          if (loginData.access) {
-            localStorage.setItem('access_token', loginData.access);
-          }
-          if (loginData.refresh) {
-            localStorage.setItem('refresh_token', loginData.refresh);
-          }
-          
-          // Update user data from login response
-          if (loginData.user) {
-            localStorage.setItem('userName', `${loginData.user.first_name} ${loginData.user.last_name}`);
-            localStorage.setItem('userEmail', loginData.user.email);
-          }
-          
-          console.log("Login successful after OTP verification");
-        } else {
-          console.error("Login failed after OTP verification");
+        // Use the proper login API
+        await authApi.login(formData.email, formData.password);
+        
+        // Tokens are already stored by authApi.login
+        console.log("Login successful after OTP verification");
+        
+        // Verify tokens are stored
+        const accessToken = localStorage.getItem('access_token');
+        if (!accessToken) {
+          console.error('No access token found after login');
+          onShowSnackbar("Login failed - no access token. Please try again.", 'error');
+          return;
         }
+        
+        console.log('Tokens verified after signup login');
       } catch (loginErr) {
         console.error("Login error after OTP verification:", loginErr);
+        onShowSnackbar("Login failed after OTP verification. Please try again.", 'error');
+        return;
       }
 
       // only ask if on mobile/tablet and user hasn't made a biometric decision before
@@ -145,7 +137,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
       }
     } catch (err) {
       console.error(err);
-      alert("Invalid OTP, try again!");
+      onShowSnackbar("Invalid OTP, try again!", 'error');
     }
   };
 
@@ -153,7 +145,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
   const registerBiometricClientSide = async () => {
     try {
       if (!window.PublicKeyCredential) {
-        alert("Biometric/WebAuthn not supported on this device/browser.");
+        onShowSnackbar("Biometric/WebAuthn not supported on this device/browser.", 'error');
         return false;
       }
 
@@ -193,7 +185,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
       })) as PublicKeyCredential | null;
 
       if (!credential) {
-        alert("Biometric registration was cancelled.");
+        onShowSnackbar("Biometric registration was cancelled.", 'warning');
         return false;
       }
 
@@ -218,7 +210,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
       return true;
     } catch (err) {
       console.error("Biometric registration error:", err);
-      alert("Failed to register biometric. Try again or use normal login.");
+      onShowSnackbar("Failed to register biometric. Try again or use normal login.", 'error');
       return false;
     }
   };
@@ -385,7 +377,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
                 }}
                 onError={() => {
                   console.log("Google login failed");
-                  alert("Google login failed");
+                  onShowSnackbar("Google login failed", 'error');
                 }}
               />
             </Stack>

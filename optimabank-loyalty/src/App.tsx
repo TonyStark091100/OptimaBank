@@ -1,10 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, useNavigate } from "react-router-dom";
-import { Box } from "@mui/material";
+import { Box, Snackbar, Alert } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { motion, AnimatePresence } from "framer-motion";
 import { GoogleOAuthProvider, CredentialResponse } from "@react-oauth/google";
 import { authApi } from "./services/api";
+import { LanguageProvider } from "./contexts/LanguageContext";
+import { TimezoneProvider } from "./contexts/TimezoneContext";
 
 import LoadingPage from "./components/LoadingPage";
 import WelcomePage from "./components/WelcomePage";
@@ -14,12 +16,102 @@ import NewsletterPage from "./components/NewsletterSection";
 import MainPage from "./components/HomePage";
 import HelpPage from "./components/HelpPage"; 
 import EditProfilePage from "./components/EditProfilePage";
+import BiometricSetupPopup from "./components/BiometricSetupPopup";
 
 const AppInner: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [showBiometricPopup, setShowBiometricPopup] = useState(false);
+  const [isMobileOrTablet, setIsMobileOrTablet] = useState(false);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error' | 'warning' | 'info'>('info');
 
   const handleLoadingComplete = () => setLoading(false);
+
+  // Snackbar handlers
+  const showSnackbar = (message: string, severity: 'success' | 'error' | 'warning' | 'info' = 'info') => {
+    setSnackbarMessage(message);
+    setSnackbarSeverity(severity);
+    setSnackbarOpen(true);
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false);
+  };
+
+  // Logout handler
+  const handleLogout = () => {
+    // Clear all authentication data
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('userName');
+    localStorage.removeItem('userEmail');
+    localStorage.removeItem('biometricEnabled');
+    localStorage.removeItem('biometricCredId');
+    localStorage.removeItem('biometricChoice');
+    
+    // Clear any session storage
+    sessionStorage.clear();
+    
+    // Show success message
+    showSnackbar('Logged out successfully', 'success');
+    
+    // Redirect to login page
+    navigate('/login');
+  };
+
+  // Device detection for biometric popup
+  useEffect(() => {
+    const detectDevice = () => {
+      const userAgent = navigator.userAgent || navigator.vendor || "";
+      const mobile = /iPhone|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+      const tablet = /iPad|Android.*Tablet|Windows.*Touch|Kindle|Silk|PlayBook/i.test(userAgent);
+      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const screenWidth = window.innerWidth;
+      const isSmallScreen = screenWidth <= 1024;
+      
+      const isMobileOrTablet = mobile || tablet || (hasTouch && isSmallScreen);
+      setIsMobileOrTablet(isMobileOrTablet);
+    };
+
+    detectDevice();
+  }, []);
+
+  // Check if biometric popup should be shown
+  const shouldShowBiometricPopup = () => {
+    // Only show on mobile/tablet devices
+    if (!isMobileOrTablet) return false;
+    
+    // Check if user has already made a choice
+    const biometricChoice = localStorage.getItem('biometricChoice');
+    if (biometricChoice !== null) return false;
+    
+    // Check if WebAuthn is supported
+    const webauthnSupported = !!(window.PublicKeyCredential && typeof window.PublicKeyCredential === "function");
+    if (!webauthnSupported) return false;
+    
+    return true;
+  };
+
+  // Biometric popup handlers
+  const handleBiometricPopupEnable = async () => {
+    await handleEnableBiometric();
+    localStorage.setItem('biometricChoice', 'enabled');
+    setShowBiometricPopup(false);
+    navigate("/main");
+  };
+
+  const handleBiometricPopupDecline = () => {
+    localStorage.setItem('biometricChoice', 'declined');
+    setShowBiometricPopup(false);
+    navigate("/main");
+  };
+
+  const handleBiometricPopupClose = () => {
+    setShowBiometricPopup(false);
+    navigate("/main");
+  };
 
   // ------------------------
   // Biometric Registration
@@ -27,7 +119,7 @@ const AppInner: React.FC = () => {
   const handleEnableBiometric = async () => {
     try {
       if (!window.PublicKeyCredential) {
-        alert("Your browser/device does not support WebAuthn.");
+        showSnackbar("Your browser/device does not support WebAuthn.", 'error');
         return;
       }
 
@@ -63,59 +155,122 @@ const AppInner: React.FC = () => {
         localStorage.setItem("biometricEnabled", "true");
         localStorage.setItem("biometricCredId", credId);
 
-        alert("Biometric login enabled successfully!");
+        showSnackbar("Biometric login enabled successfully!", 'success');
       } else {
-        alert("Biometric setup was cancelled.");
+        showSnackbar("Biometric setup was cancelled.", 'warning');
       }
     } catch (err: any) {
       console.error("Biometric setup failed:", err);
-      alert("Failed to enable biometric login.");
+      showSnackbar("Failed to enable biometric login.", 'error');
     }
   };
 
   // ------------------------
   // Google Auth
   // ------------------------
-  const handleGoogleAuth = async (credentialResponse: CredentialResponse) => {
-    console.log("Google auth success:", credentialResponse);
+  const handleGoogleSignUp = async (credentialResponse: CredentialResponse) => {
+    console.log("Google signup success:", credentialResponse);
     const token = credentialResponse?.credential;
     if (!token) {
-      alert("Google login failed (no token).");
+      showSnackbar("Google signup failed (no token).", 'error');
       return;
     }
     
     try {
-      // Decode the JWT token to get user information
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const email = payload.email || '';
-      const name = payload.name || payload.given_name || '';
-      
-      // Use the real login API with Google credential
-      const response = await authApi.googleAuth(token);
+      // Use the signup API with Google credential
+      const response = await authApi.googleAuth(token, 'signup');
       
       // Store user data from API response
       if (response.user) {
-        localStorage.setItem('userName', `${response.user.first_name} ${response.user.last_name}`);
+        const fullName = response.user.name || `${response.user.first_name} ${response.user.last_name}`.trim();
+        localStorage.setItem('userName', fullName || response.user.email.split('@')[0]);
         localStorage.setItem('userEmail', response.user.email);
-      } else {
-        // Fallback to Google payload data
-        if (name) {
-          localStorage.setItem('userName', name);
-        } else if (email) {
-          localStorage.setItem('userName', email.split('@')[0]);
-        }
-        if (email) {
-          localStorage.setItem('userEmail', email);
-        }
+        localStorage.setItem('userPoints', response.user.points?.toString() || '0');
+        
+        showSnackbar(`Welcome to Optima Rewards! Your account has been created successfully. You have ${response.user.points || 10000} points to get started!`, 'success');
       }
       
-    } catch (error) {
-      console.error('Error with Google authentication:', error);
-      // Fallback to generic user name
-      localStorage.setItem('userName', 'User');
+    } catch (error: any) {
+      console.error('Error with Google signup:', error);
+      
+      // Handle specific error types
+      if (error.errorType === 'account_exists') {
+        showSnackbar(`Account already exists with this email address. Please use the login option instead.`, 'warning');
+        // Optionally redirect to login page
+        navigate("/login");
+        return;
+      }
+      
+      showSnackbar(`Google signup failed: ${error.message || 'Please try again.'}`, 'error');
+      return;
     }
     
-    alert("Google login successful!");
+    // Verify tokens are stored before navigating
+    const accessToken = localStorage.getItem('access_token');
+    if (!accessToken) {
+      console.error('No access token found after Google signup');
+      showSnackbar("Google signup failed - no access token. Please try again.", 'error');
+      return;
+    }
+    
+    console.log('Google signup successful, tokens stored');
+    
+    // Check if we should show biometric popup after successful Google signup
+    if (shouldShowBiometricPopup()) {
+      setShowBiometricPopup(true);
+      // Don't navigate immediately, let user handle biometric setup
+      return;
+    }
+    
+    navigate("/main");
+  };
+
+  const handleGoogleLogin = async (credentialResponse: CredentialResponse) => {
+    console.log("Google login success:", credentialResponse);
+    const token = credentialResponse?.credential;
+    if (!token) {
+      showSnackbar("Google login failed (no token).", 'error');
+      return;
+    }
+    
+    try {
+      // Use the login API with Google credential
+      const response = await authApi.googleAuth(token, 'login');
+      
+      // Store user data from API response
+      if (response.user) {
+        const fullName = response.user.name || `${response.user.first_name} ${response.user.last_name}`.trim();
+        localStorage.setItem('userName', fullName || response.user.email.split('@')[0]);
+        localStorage.setItem('userEmail', response.user.email);
+        localStorage.setItem('userPoints', response.user.points?.toString() || '0');
+        
+        showSnackbar('Welcome back!');
+      }
+      
+    } catch (error: any) {
+      console.error('Error with Google login:', error);
+      
+      // Handle specific error types
+      if (error.errorType === 'account_not_found') {
+        showSnackbar(`No account found with this email address. Please sign up first.`, 'warning');
+        // Optionally redirect to signup page
+        navigate("/signup");
+        return;
+      }
+      
+      showSnackbar(`Google login failed: ${error.message || 'Please try again.'}`, 'error');
+      return;
+    }
+    
+    // Verify tokens are stored before navigating
+    const accessToken = localStorage.getItem('access_token');
+    if (!accessToken) {
+      console.error('No access token found after Google login');
+      showSnackbar("Google login failed - no access token. Please try again.", 'error');
+      return;
+    }
+    
+    console.log('Google login successful, tokens stored');
     navigate("/main");
   };
 
@@ -124,29 +279,29 @@ const AppInner: React.FC = () => {
   // ------------------------
   const requestOtp = async (email: string) => {
     try {
-      const res = await fetch("http://localhost:8000/users/request-otp/", {
+      const res = await fetch("http://127.0.0.1:8000/users/request-otp/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to request OTP");
-      alert(data.message);
+      showSnackbar(data.message, 'success');
     } catch (err: any) {
-      alert(err.message);
+      showSnackbar(err.message, 'error');
     }
   };
 
   const verifyOtp = async (email: string, otp: string, skipNavigation = false) => {
     try {
-      const res = await fetch("http://localhost:8000/users/verify-otp/", {
+      const res = await fetch("http://127.0.0.1:8000/users/verify-otp/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "OTP verification failed");
-      alert(data.message);
+      showSnackbar(data.message, 'success');
       
       // If we have a stored password, it means this is a login flow
       const tempPassword = localStorage.getItem('tempPassword');
@@ -154,37 +309,57 @@ const AppInner: React.FC = () => {
         // Clear the temporary password
         localStorage.removeItem('tempPassword');
         
-        // Login the user with stored credentials
+        // Login the user with stored credentials (tokens are stored automatically by authApi.login)
         try {
           const loginResponse = await authApi.login(email, tempPassword);
-          
-          // Store tokens
-          if (loginResponse.access) {
-            localStorage.setItem('access_token', loginResponse.access);
-          }
-          if (loginResponse.refresh) {
-            localStorage.setItem('refresh_token', loginResponse.refresh);
-          }
           
           // Update user data from login response
           if (loginResponse.user) {
             localStorage.setItem('userName', `${loginResponse.user.first_name} ${loginResponse.user.last_name}`);
             localStorage.setItem('userEmail', loginResponse.user.email);
+            localStorage.setItem('userPoints', loginResponse.user.points?.toString() || '0');
+          }
+          
+          // Store password for biometric authentication (only if biometric is enabled)
+          const biometricEnabled = localStorage.getItem("biometricEnabled") === "true";
+          if (biometricEnabled) {
+            localStorage.setItem('userPassword', tempPassword);
+          }
+          
+          // Verify tokens are stored
+          const accessToken = localStorage.getItem('access_token');
+          const refreshToken = localStorage.getItem('refresh_token');
+          console.log('Tokens stored after OTP verification:', { accessToken: !!accessToken, refreshToken: !!refreshToken });
+          
+          if (!accessToken) {
+            console.error('No access token found after login');
+            showSnackbar("Login failed - no access token. Please try again.", 'error');
+            return;
           }
           
           console.log("Login successful after OTP verification");
         } catch (loginErr) {
           console.error("Login error after OTP verification:", loginErr);
-          alert("Login failed after OTP verification. Please try again.");
+          showSnackbar("Login failed after OTP verification. Please try again.", 'error');
           return;
         }
       }
       
       if (!skipNavigation) {
-        navigate("/main");
+        // Check if we should show biometric popup after successful signup
+        if (shouldShowBiometricPopup()) {
+          setShowBiometricPopup(true);
+          // Don't navigate immediately, let user handle biometric setup
+          return;
+        }
+        
+        // Small delay to ensure tokens are stored
+        setTimeout(() => {
+          navigate("/main");
+        }, 100);
       }
     } catch (err: any) {
-      alert(err.message);
+      showSnackbar(err.message, 'error');
     }
   };
 
@@ -265,6 +440,7 @@ const AppInner: React.FC = () => {
               path="/signup"
               element={
                 <SignUpPage
+                  onShowSnackbar={showSnackbar}
                   onSignUp={async (formData, skipNavigation = false) => {
                     try {
                       const firstName = (formData?.firstName || "").toString().trim();
@@ -299,8 +475,14 @@ const AppInner: React.FC = () => {
                       localStorage.setItem('userName', fullName);
                       localStorage.setItem('userEmail', email);
                       
+                      // Store password for biometric authentication (only if biometric is enabled)
+                      const biometricEnabled = localStorage.getItem("biometricEnabled") === "true";
+                      if (biometricEnabled) {
+                        localStorage.setItem('userPassword', password);
+                      }
+                      
                       if (!skipNavigation) {
-                        alert("Signed up successfully!");
+                        showSnackbar("Signed up successfully!", 'success');
                         console.log("SignUp formData:", formData);
                         navigate("/main");
                       }
@@ -311,7 +493,7 @@ const AppInner: React.FC = () => {
                     }
                   }}
                   onSwitchToLogin={() => navigate("/login")}
-                  onGoogleSignUp={handleGoogleAuth}
+                  onGoogleSignUp={handleGoogleSignUp}
                   onEnableBiometric={handleEnableBiometric}
                   onRequestOtp={requestOtp}
                   onVerifyOtp={verifyOtp}
@@ -324,11 +506,12 @@ const AppInner: React.FC = () => {
               path="/login"
               element={
                 <LoginPage
+                  onShowSnackbar={showSnackbar}
                   onLogin={async (email: string, password: string) => {
                     try {
                       console.log('Attempting login with:', { email, password: '***' });
                       
-                      // Call the real login API
+                      // Call the real login API (this stores tokens automatically)
                       const response = await authApi.login(email, password);
                       console.log('Login response:', response);
                       
@@ -336,10 +519,22 @@ const AppInner: React.FC = () => {
                       if (response.user) {
                         localStorage.setItem('userName', `${response.user.first_name} ${response.user.last_name}`);
                         localStorage.setItem('userEmail', response.user.email);
+                        localStorage.setItem('userPoints', response.user.points?.toString() || '0');
                       }
                       
                       // Store password temporarily for OTP verification
                       localStorage.setItem('tempPassword', password);
+                      
+                      // Store password for biometric authentication (only if biometric is enabled)
+                      const biometricEnabled = localStorage.getItem("biometricEnabled") === "true";
+                      if (biometricEnabled) {
+                        localStorage.setItem('userPassword', password);
+                      }
+                      
+                      // Verify tokens are stored
+                      const accessToken = localStorage.getItem('access_token');
+                      const refreshToken = localStorage.getItem('refresh_token');
+                      console.log('Tokens stored:', { accessToken: !!accessToken, refreshToken: !!refreshToken });
                       
                       console.log("Login successful, OTP will be requested");
                       // Don't navigate yet - let the OTP flow handle navigation
@@ -353,14 +548,23 @@ const AppInner: React.FC = () => {
                   onRequestOtp={requestOtp}
                   onVerifyOtp={verifyOtp}
                   onSwitchToSignUp={() => navigate("/signup")}
-                  onGoogleSignIn={handleGoogleAuth}
+                  onGoogleSignIn={handleGoogleLogin}
                   onBiometricSignIn={async () => {
                     try {
                       const enabled = localStorage.getItem("biometricEnabled") === "true";
                       const credId = localStorage.getItem("biometricCredId");
 
                       if (!enabled || !credId) {
-                        alert("Biometric login not enabled.");
+                        showSnackbar("Biometric login not enabled. Please enable it during signup.", 'warning');
+                        return false;
+                      }
+
+                      // Check if we have stored user credentials
+                      const storedEmail = localStorage.getItem('userEmail');
+                      const storedPassword = localStorage.getItem('userPassword');
+                      
+                      if (!storedEmail || !storedPassword) {
+                        showSnackbar("No stored credentials found. Please login with email/password first to enable biometric login.", 'warning');
                         return false;
                       }
 
@@ -388,42 +592,30 @@ const AppInner: React.FC = () => {
                       })) as PublicKeyCredential | null;
 
                       if (assertion) {
-                        // Load stored user data for biometric login
-                        const storedName = localStorage.getItem('userName') || 'User';
-                        const storedEmail = localStorage.getItem('userEmail') || 'biometric@example.com';
-                        
+                        // Biometric authentication successful, now login with stored credentials
                         try {
-                          // Use the real login API for biometric authentication
-                          const response = await authApi.login(storedEmail, 'biometric_demo');
+                          const response = await authApi.login(storedEmail, storedPassword);
                           
                           // Store user data from API response
                           if (response.user) {
                             localStorage.setItem('userName', `${response.user.first_name} ${response.user.last_name}`);
                             localStorage.setItem('userEmail', response.user.email);
-                          } else {
-                            // Ensure user data is available
-                            if (!storedName || storedName === 'User') {
-                              localStorage.setItem('userName', 'User');
-                            }
+                            localStorage.setItem('userPoints', response.user.points?.toString() || '0');
                           }
-                        } catch (error) {
-                          console.error('Biometric login error:', error);
-                          // Fallback to stored data
-                          if (!storedName || storedName === 'User') {
-                            localStorage.setItem('userName', 'User');
-                          }
+                          
+                          return true;
+                        } catch (loginError: any) {
+                          console.error('Biometric login API error:', loginError);
+                          showSnackbar(`Login failed: ${loginError.message || 'Please try again.'}`, 'error');
+                          return false;
                         }
-                        
-                        alert("Biometric authentication successful!");
-                        navigate("/main");
-                        return true;
                       }
 
-                      alert("Biometric authentication cancelled.");
+                      showSnackbar("Biometric authentication cancelled.", 'warning');
                       return false;
                     } catch (err) {
                       console.error("Biometric login failed:", err);
-                      alert("Biometric authentication failed.");
+                      showSnackbar("Biometric authentication failed.", 'error');
                       return false;
                     }
                   }}
@@ -432,28 +624,63 @@ const AppInner: React.FC = () => {
             />
 
             {/* Main (Home) */}
-            <Route path="/main" element={<MainPage />} />
+            <Route path="/main" element={<MainPage onShowSnackbar={showSnackbar} onLogout={handleLogout} />} />
 
             {/* Help Page */}
             <Route path="/help" element={<HelpPage />} />
 
             {/* ✅ Edit Page */}
-            <Route path="/edit" element={<EditProfilePage />} />
+            <Route path="/edit" element={<EditProfilePage onShowSnackbar={showSnackbar} />} />
           </Routes>
         </motion.div>
       )}
+      
+      {/* Biometric Setup Popup */}
+      <BiometricSetupPopup
+        open={showBiometricPopup}
+        onClose={handleBiometricPopupClose}
+        onEnable={handleBiometricPopupEnable}
+        onDecline={handleBiometricPopupDecline}
+      />
+      
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={4000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={handleSnackbarClose} 
+          severity={snackbarSeverity}
+          sx={{ 
+            width: '100%',
+            borderRadius: 2,
+            '& .MuiAlert-message': {
+              fontSize: '0.95rem',
+              fontWeight: 500
+            }
+          }}
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
     </AnimatePresence>
   );
 };
 
 const App: React.FC = () => {
-  const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID || "YOUR_CLIENT_ID";
+  const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID || "59629112789-huo85fv2fpcpba1jqqdic5vlq43m4p5n.apps.googleusercontent.com";
   return (
-    <GoogleOAuthProvider clientId={googleClientId}>
-      <Router>
-        <AppInner />
-      </Router>
-    </GoogleOAuthProvider>
+    <LanguageProvider>
+      <TimezoneProvider>
+        <GoogleOAuthProvider clientId={googleClientId}>
+          <Router>
+            <AppInner />
+          </Router>
+        </GoogleOAuthProvider>
+      </TimezoneProvider>
+    </LanguageProvider>
   );
 };
 

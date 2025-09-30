@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 import environ
 
 # Initialize environment variables
-env = environ.Env()
+env = environ.Env()  # type: ignore
 environ.Env.read_env()  # reads the .env file
 
 # Load environment variables from .env file
@@ -99,13 +99,9 @@ WSGI_APPLICATION = "backend.wsgi.application"
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'voucher_system',
-        'USER': 'voucher_system',
-        'PASSWORD': 'Ultron2099',
-        'HOST': 'localhost',  # or your DB server
-        'PORT': '5432',       # default PostgreSQL port
- }
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
 }
 
 # Password validation
@@ -239,9 +235,9 @@ OAUTH2_PROVIDER = {
 
 # Email settings for OTP (example)
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
-EMAIL_PORT = env.int("EMAIL_PORT", default=587)
-EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")  # type: ignore
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)  # type: ignore
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)  # type: ignore
 EMAIL_HOST_USER = env("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
 

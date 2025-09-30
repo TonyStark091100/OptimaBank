@@ -27,7 +27,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
-import FingerprintIcon from "@mui/icons-material/Fingerprint";
+import { Fingerprint } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import {
   LineChart,
@@ -49,6 +49,7 @@ type LoginPageProps = {
   onBiometricSignIn: () => Promise<boolean>;
   onRequestOtp: (email: string) => Promise<void>;
   onVerifyOtp: (email: string, otp: string, skipNavigation?: boolean) => Promise<void>;
+  onShowSnackbar: (message: string, severity: 'success' | 'error' | 'warning' | 'info') => void;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -64,6 +65,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
   onBiometricSignIn,
   onRequestOtp,
   onVerifyOtp,
+  onShowSnackbar,
 }) => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
@@ -83,16 +85,26 @@ const LoginPage: React.FC<LoginPageProps> = ({
   const [biometricSupported, setBiometricSupported] = useState(false);
 
   useEffect(() => {
-    // Detect mobile device with more comprehensive detection
+    // Detect mobile/tablet devices with comprehensive detection
     const userAgent = navigator.userAgent || navigator.vendor || "";
-    const mobile = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+    
+    // Check for mobile and tablet devices
+    const mobile = /iPhone|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+    const tablet = /iPad|Android.*Tablet|Windows.*Touch|Kindle|Silk|PlayBook/i.test(userAgent);
     
     // Additional check for touch capability
     const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     
-    // Consider it mobile if it matches mobile user agent OR has touch capability
-    const isMobile = mobile || (hasTouch && window.innerWidth <= 768);
-    setIsMobileDevice(isMobile);
+    // Check screen size for mobile/tablet detection
+    const screenWidth = window.innerWidth;
+    const isSmallScreen = screenWidth <= 1024; // Include tablets in this range
+    
+    // Consider it mobile/tablet if:
+    // 1. Matches mobile user agent OR
+    // 2. Matches tablet user agent OR  
+    // 3. Has touch capability AND small screen
+    const isMobileOrTablet = mobile || tablet || (hasTouch && isSmallScreen);
+    setIsMobileDevice(isMobileOrTablet);
 
     // Check WebAuthn support
     const webauthnSupported = !!(window.PublicKeyCredential && typeof window.PublicKeyCredential === "function");
@@ -102,10 +114,12 @@ const LoginPage: React.FC<LoginPageProps> = ({
     console.log('Device Detection:', {
       userAgent,
       mobile,
+      tablet,
       hasTouch,
-      isMobile,
+      isMobileOrTablet,
       webauthnSupported,
-      screenWidth: window.innerWidth
+      screenWidth,
+      maxTouchPoints: navigator.maxTouchPoints
     });
   }, []);
 
@@ -133,12 +147,12 @@ const LoginPage: React.FC<LoginPageProps> = ({
       setAnalyticsError(error.message);
       // Fallback to mock data
       setRealtimeData([
-        { hour: "09:00", users: 45, timestamp: new Date().toISOString() },
-        { hour: "10:00", users: 52, timestamp: new Date().toISOString() },
-        { hour: "11:00", users: 48, timestamp: new Date().toISOString() },
-        { hour: "12:00", users: 61, timestamp: new Date().toISOString() },
-        { hour: "13:00", users: 58, timestamp: new Date().toISOString() },
-        { hour: "14:00", users: 55, timestamp: new Date().toISOString() },
+        { hour: "09:00", users: 45, timestamp: new Date().toISOString(), activity_level: 'medium' as const },
+        { hour: "10:00", users: 52, timestamp: new Date().toISOString(), activity_level: 'high' as const },
+        { hour: "11:00", users: 48, timestamp: new Date().toISOString(), activity_level: 'medium' as const },
+        { hour: "12:00", users: 61, timestamp: new Date().toISOString(), activity_level: 'high' as const },
+        { hour: "13:00", users: 58, timestamp: new Date().toISOString(), activity_level: 'high' as const },
+        { hour: "14:00", users: 55, timestamp: new Date().toISOString(), activity_level: 'high' as const },
       ]);
     } finally {
       setAnalyticsLoading(false);
@@ -155,22 +169,26 @@ const LoginPage: React.FC<LoginPageProps> = ({
       // Fallback to mock data
       setLiveUserCount({
         active_users: 25,
+        active_users_15min: 30,
+        active_users_1hour: 45,
         total_users: 150,
         online_users: 18,
-        timestamp: new Date().toISOString()
+        activity_trend: 5.2,
+        timestamp: new Date().toISOString(),
+        status: 'live'
       });
     }
   };
 
-  // Set up real-time data fetching
+  // Set up real-time data fetching with more frequent updates
   useEffect(() => {
     // Initial fetch
     fetchRealtimeAnalytics();
     fetchLiveUserCount();
 
-    // Set up intervals for real-time updates
-    const analyticsInterval = setInterval(fetchRealtimeAnalytics, 10000); // Every 10 seconds
-    const userCountInterval = setInterval(fetchLiveUserCount, 5000); // Every 5 seconds
+    // Set up intervals for real-time updates (more frequent for better real-time feel)
+    const analyticsInterval = setInterval(fetchRealtimeAnalytics, 8000); // Every 8 seconds
+    const userCountInterval = setInterval(fetchLiveUserCount, 3000); // Every 3 seconds
 
     return () => {
       clearInterval(analyticsInterval);
@@ -186,13 +204,13 @@ const LoginPage: React.FC<LoginPageProps> = ({
 
   // ✅ handle OTP using props from App.tsx
   const handleOtpRequest = async () => {
-    if (!email) return alert("Please enter your email first");
+    if (!email) return onShowSnackbar("Please enter your email first", 'warning');
     try {
       await onRequestOtp(email);
       setOtpDialogOpen(true);
     } catch (err) {
       console.error(err);
-      alert("Failed to send OTP");
+      onShowSnackbar("Failed to send OTP", 'error');
     }
   };
 
@@ -203,7 +221,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
       // Navigation will be handled by the verifyOtp function
     } catch (err) {
       console.error(err);
-      alert("Invalid OTP, try again!");
+      onShowSnackbar("Invalid OTP, try again!", 'error');
     }
   };
 
@@ -212,7 +230,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
       // Check if biometric is enabled
       const enabled = localStorage.getItem("biometricEnabled") === "true";
       if (!enabled) {
-        alert("Biometric authentication is not enabled. Please enable it during signup or contact support.");
+        onShowSnackbar("Biometric authentication is not enabled. Please enable it during signup or contact support.", 'warning');
         return;
       }
 
@@ -220,20 +238,20 @@ const LoginPage: React.FC<LoginPageProps> = ({
       if (success) {
         navigate("/main", { state: { showSnackbar: true } });
       } else {
-        alert("Biometric authentication failed. Please try again or use your password.");
+        onShowSnackbar("Biometric authentication failed. Please try again or use your password.", 'error');
       }
     } catch (err: any) {
       console.error('Biometric login error:', err);
       
       // Provide more specific error messages
       if (err.name === 'NotAllowedError') {
-        alert("Biometric authentication was cancelled or not allowed. Please try again.");
+        onShowSnackbar("Biometric authentication was cancelled or not allowed. Please try again.", 'warning');
       } else if (err.name === 'NotSupportedError') {
-        alert("Biometric authentication is not supported on this device.");
+        onShowSnackbar("Biometric authentication is not supported on this device.", 'error');
       } else if (err.name === 'SecurityError') {
-        alert("Security error during biometric authentication. Please try again.");
+        onShowSnackbar("Security error during biometric authentication. Please try again.", 'error');
       } else {
-        alert(`Biometric authentication error: ${err.message || 'Unknown error'}`);
+        onShowSnackbar(`Biometric authentication error: ${err.message || 'Unknown error'}`, 'error');
       }
     }
   };
@@ -251,13 +269,14 @@ const LoginPage: React.FC<LoginPageProps> = ({
               Track real-time user activity and platform metrics
             </Typography>
             
-            {/* Real-time Metrics Display */}
+            {/* Enhanced Real-time Metrics Display */}
             {liveUserCount && (
               <Box sx={{ mb: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <Card sx={{ 
                   background: 'rgba(162, 89, 255, 0.1)', 
                   border: '1px solid rgba(162, 89, 255, 0.3)',
-                  minWidth: 120
+                  minWidth: 120,
+                  position: 'relative'
                 }}>
                   <CardContent sx={{ p: 2, textAlign: 'center' }}>
                     <Typography variant="h6" sx={{ color: '#A259FF', fontWeight: 'bold' }}>
@@ -266,6 +285,11 @@ const LoginPage: React.FC<LoginPageProps> = ({
                     <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
                       Online Now
                     </Typography>
+                    {liveUserCount.activity_trend > 0 && (
+                      <Typography variant="caption" sx={{ color: '#00FF00', display: 'block', mt: 0.5 }}>
+                        ↗ +{liveUserCount.activity_trend.toFixed(1)}%
+                      </Typography>
+                    )}
                   </CardContent>
                 </Card>
                 
@@ -279,7 +303,10 @@ const LoginPage: React.FC<LoginPageProps> = ({
                       {liveUserCount.active_users}
                     </Typography>
                     <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
-                      Active Today
+                      Active (5min)
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.5)', display: 'block', mt: 0.5 }}>
+                      {liveUserCount.active_users_1hour} (1h)
                     </Typography>
                   </CardContent>
                 </Card>
@@ -362,11 +389,40 @@ const LoginPage: React.FC<LoginPageProps> = ({
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={usageData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                  <XAxis dataKey="month" stroke="#CCCCDD" />
-                  <YAxis stroke="#CCCCDD" />
-                  <Tooltip />
+                  <XAxis 
+                    dataKey="month" 
+                    stroke="#CCCCDD" 
+                    fontSize={12}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis 
+                    stroke="#CCCCDD" 
+                    fontSize={12}
+                    domain={['dataMin - 5', 'dataMax + 5']}
+                  />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'rgba(10, 10, 20, 0.95)',
+                      border: '1px solid #A259FF',
+                      borderRadius: '8px',
+                      color: 'white'
+                    }}
+                    labelStyle={{ color: '#A259FF' }}
+                    formatter={(value: any, name: any) => [
+                      `${value} users`,
+                      'Active Users'
+                    ]}
+                  />
                   <Legend />
-                  <Line type="monotone" dataKey="users" stroke="#A259FF" strokeWidth={3} dot={false} />
+                  <Line 
+                    type="monotone" 
+                    dataKey="users" 
+                    stroke="#A259FF" 
+                    strokeWidth={3} 
+                    dot={{ fill: '#A259FF', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, fill: '#8a3ffb' }}
+                    animationDuration={1000}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </Box>
@@ -402,7 +458,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
             <Stack direction="column" spacing={2}>
               <GoogleLogin
                 onSuccess={onGoogleSignIn}
-                onError={() => { alert("Google login failed"); }}
+                onError={() => { onShowSnackbar("Google login failed", 'error'); }}
                 useOneTap
               />
             </Stack>
@@ -422,7 +478,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
                   // 2️⃣ Request OTP after login success
                   await handleOtpRequest();
                 } catch (error: any) {
-                  alert(error?.message || "Login failed. Please check your credentials.");
+                  onShowSnackbar(error?.message || "Login failed. Please check your credentials.", 'error');
                 }
               }}
             >
@@ -454,7 +510,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
                             }}
                             title="Use biometric authentication"
                           >
-                            <FingerprintIcon />
+                            <Fingerprint />
                           </IconButton>
                         )}
                       </InputAdornment>

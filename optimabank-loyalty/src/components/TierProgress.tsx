@@ -26,14 +26,22 @@ import {
   CheckCircle,
   Diamond,
   EmojiEvents,
+  Lightbulb,
+  Schedule,
+  // Target,
+  AutoAwesome,
+  Warning,
+  Rocket,
+  Timeline
 } from '@mui/icons-material';
 import { tierApi, TierProgressData, RewardTier, TierBenefit } from '../services/api';
 
 interface TierProgressProps {
   onTierUpgrade?: (newTier: RewardTier) => void;
+  onShowSnackbar: (message: string, severity: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
-const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade }) => {
+const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackbar }) => {
   const [tierData, setTierData] = useState<TierProgressData | null>(null);
   const [allTiers, setAllTiers] = useState<RewardTier[]>([]);
   const [benefitsDialogOpen, setBenefitsDialogOpen] = useState(false);
@@ -41,14 +49,32 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade }) => {
   const [selectedTierId, setSelectedTierId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [predictions, setPredictions] = useState<any>(null);
+  const [showPredictions, setShowPredictions] = useState(false);
 
   useEffect(() => {
+    // Clear any existing Bronze tier upgrade notifications on component mount
+    const bronzeUpgradeKey = 'tier_upgrade_seen_1'; // Assuming Bronze tier ID is 1
+    if (sessionStorage.getItem(bronzeUpgradeKey)) {
+      sessionStorage.removeItem(bronzeUpgradeKey);
+      console.log('Cleared existing Bronze tier upgrade notification');
+    }
+    
     fetchTierData();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchTierData = async () => {
     try {
       setLoading(true);
+      setError(null);
+      
+      // Check if user is authenticated
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        setError('Please log in to view tier information');
+        return;
+      }
+      
       const [tierInfo, tiers] = await Promise.all([
         tierApi.getUserTierInfo(),
         tierApi.getAllTiers(),
@@ -56,12 +82,46 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade }) => {
       setTierData(tierInfo);
       setAllTiers(tiers);
       
-      // Check if user was upgraded
+      // Check if user was upgraded (only show notification once per session)
       if (tierInfo.last_tier_upgrade && onTierUpgrade) {
-        onTierUpgrade(tierInfo.current_tier);
+        const currentTierName = tierInfo.current_tier.tier_name.toLowerCase();
+        
+        // Skip Bronze tier notifications since users start at Bronze
+        if (currentTierName === 'bronze') {
+          console.log('Skipping Bronze tier upgrade notification - user already at Bronze');
+          return;
+        }
+        
+        const lastUpgradeKey = `tier_upgrade_seen_${tierInfo.current_tier.id}`;
+        const hasSeenUpgrade = sessionStorage.getItem(lastUpgradeKey);
+        
+        // Check if this is a recent upgrade (within last 24 hours) that hasn't been seen
+        const isRecentUpgrade = tierInfo.last_tier_upgrade && 
+          new Date(tierInfo.last_tier_upgrade) > new Date(Date.now() - 24 * 60 * 60 * 1000);
+        
+        if (!hasSeenUpgrade && isRecentUpgrade) {
+          // Mark as seen and show the upgrade notification
+          sessionStorage.setItem(lastUpgradeKey, 'true');
+          console.log(`Showing tier upgrade notification for ${currentTierName} tier`);
+          onTierUpgrade(tierInfo.current_tier);
+        } else {
+          console.log('Skipping tier upgrade notification:', {
+            hasSeenUpgrade: !!hasSeenUpgrade,
+            isRecentUpgrade,
+            currentTier: currentTierName,
+            lastUpgrade: tierInfo.last_tier_upgrade
+          });
+        }
       }
     } catch (err: any) {
-      setError(err.message);
+      console.error('Tier data fetch error:', err);
+      if (err.message.includes('401') || err.message.includes('Unauthorized')) {
+        setError('Please log in to view tier information');
+      } else if (err.message.includes('404')) {
+        setError('Tier system not available. Please try again later.');
+      } else {
+        setError(err.message || 'Failed to load tier information');
+      }
     } finally {
       setLoading(false);
     }
@@ -74,9 +134,9 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade }) => {
       await fetchTierData();
       
       // Show success message
-      alert(result.message);
+      onShowSnackbar(result.message, 'success');
     } catch (err: any) {
-      alert(`Failed to claim login bonus: ${err.message}`);
+      onShowSnackbar(`Failed to claim login bonus: ${err.message}`, 'error');
     }
   };
 
@@ -87,7 +147,7 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade }) => {
       setSelectedTierId(tierId);
       setBenefitsDialogOpen(true);
     } catch (err: any) {
-      alert(`Failed to load benefits: ${err.message}`);
+      onShowSnackbar(`Failed to load benefits: ${err.message}`, 'error');
     }
   };
 
@@ -104,6 +164,128 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade }) => {
       default:
         return '⭐';
     }
+  };
+
+  // Predictive Analysis Functions
+  const calculatePredictions = () => {
+    console.log('Calculating predictions with:', { tierData, allTiers });
+    
+    if (!tierData || !allTiers.length) {
+      console.log('Missing data:', { tierData: !!tierData, allTiersLength: allTiers.length });
+      return null;
+    }
+
+    const currentTier = tierData.current_tier;
+    const currentPoints = (tierData as any).current_points || 0;
+    const nextTier = allTiers.find(tier => (tier as any).points_required > currentPoints);
+    
+    console.log('Tier analysis:', { currentTier, currentPoints, nextTier });
+    
+    if (!nextTier) {
+      console.log('No next tier found');
+      return null;
+    }
+
+    const pointsNeeded = (nextTier as any).points_required - currentPoints;
+    
+    // Calculate daily point earning rate (mock data - in real app, analyze user history)
+    const dailyEarningRate = 150; // Average points per day
+    const daysToNextTier = Math.ceil(pointsNeeded / dailyEarningRate);
+    
+    // Calculate risk of losing current tier (if applicable)
+    const tierMaintenanceThreshold = (currentTier as any).points_required * 0.8; // 80% of tier requirement
+    const isAtRisk = currentPoints < tierMaintenanceThreshold;
+    const pointsToMaintain = Math.max(0, tierMaintenanceThreshold - currentPoints);
+    
+    // Generate recommendations
+    const recommendations = generateRecommendations(pointsNeeded, daysToNextTier, isAtRisk, pointsToMaintain);
+    
+    const result = {
+      nextTier,
+      pointsNeeded,
+      daysToNextTier,
+      isAtRisk,
+      pointsToMaintain,
+      recommendations,
+      currentTier
+    };
+    
+    console.log('Generated predictions:', result);
+    return result;
+  };
+
+  const generateRecommendations = (pointsNeeded: number, daysToNextTier: number, isAtRisk: boolean, pointsToMaintain: number) => {
+    const recommendations = [];
+
+    // Quick win recommendations
+    if (pointsNeeded <= 500) {
+      recommendations.push({
+        type: 'quick_win',
+        title: 'Almost There!',
+        description: `You're just ${pointsNeeded} points away from the next tier!`,
+        action: 'Complete daily login to earn 100 points',
+        points: 100,
+        icon: <Rocket sx={{ color: '#4CAF50' }} />,
+        priority: 'high'
+      });
+    }
+
+    // Daily activity recommendations
+    recommendations.push({
+      type: 'daily_activity',
+      title: 'Daily Login Streak',
+      description: `Maintain your daily login streak to earn 100 points per day`,
+      action: 'Login daily for consistent point earning',
+      points: 100,
+      icon: <Schedule sx={{ color: '#2196F3' }} />,
+      priority: 'medium'
+    });
+
+    // Tier maintenance warning
+    if (isAtRisk) {
+      recommendations.push({
+        type: 'maintenance_warning',
+        title: 'Tier Maintenance Alert',
+        description: `You need ${pointsToMaintain} more points to maintain your current tier`,
+        action: 'Complete activities to secure your tier status',
+        points: pointsToMaintain,
+        icon: <Warning sx={{ color: '#FF5722' }} />,
+        priority: 'high'
+      });
+    }
+
+    // Time-based predictions
+    if (daysToNextTier <= 30) {
+      recommendations.push({
+        type: 'time_prediction',
+        title: 'Tier Upgrade Timeline',
+        description: `At your current pace, you'll reach the next tier in ${daysToNextTier} days`,
+        action: 'Stay consistent with your current activities',
+        points: 0,
+        icon: <Timeline sx={{ color: '#9C27B0' }} />,
+        priority: 'low'
+      });
+    }
+
+    // Gamification suggestions
+    recommendations.push({
+      type: 'gamification',
+      title: 'Boost Your Progress',
+      description: 'Try mini-games to earn bonus points and accelerate your tier journey',
+      action: 'Play mini-games for extra points',
+      points: 50,
+      icon: <AutoAwesome sx={{ color: '#FF9800' }} />,
+      priority: 'medium'
+    });
+
+    return recommendations;
+  };
+
+  const handleShowPredictions = () => {
+    const predictionData = calculatePredictions();
+    console.log('Prediction data:', predictionData);
+    setPredictions(predictionData);
+    setShowPredictions(true);
   };
 
   const getTierColor = (tierName: string) => {
@@ -155,16 +337,36 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade }) => {
   if (error || !tierData) {
     return (
       <Card sx={{ mb: 3, background: 'rgba(34,34,50,0.98)', border: '1px solid rgba(162, 89, 255, 0.3)' }}>
-        <CardContent>
-          <Typography variant="h6" sx={{ color: 'white', textAlign: 'center' }}>
+        <CardContent sx={{ textAlign: 'center', py: 4 }}>
+          <Warning sx={{ color: '#ff6b6b', fontSize: 48, mb: 2 }} />
+          <Typography variant="h6" sx={{ color: 'white', mb: 2 }}>
             {error || 'Failed to load tier information'}
           </Typography>
+          <Button
+            variant="contained"
+            onClick={fetchTierData}
+            sx={{
+              background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
+              color: 'white',
+              fontWeight: 600,
+              px: 3,
+              py: 1,
+              borderRadius: 2,
+              '&:hover': {
+                background: 'linear-gradient(45deg, #9147e6 30%, #7a36d9 90%)',
+                transform: 'translateY(-2px)',
+                boxShadow: '0 8px 20px rgba(162, 89, 255, 0.4)'
+              }
+            }}
+          >
+            Retry
+          </Button>
         </CardContent>
       </Card>
     );
   }
 
-  const { current_tier, next_tier, progress_percentage, points_to_next_tier, total_points_earned } = tierData;
+  const { current_tier, next_tier, progress_percentage, points_to_next_tier } = tierData;
 
   return (
     <>
@@ -216,30 +418,56 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade }) => {
               </Box>
             </Box>
             
-            <Button
-              variant="contained"
-              size="medium"
-              onClick={handleClaimLoginBonus}
-              sx={{
-                background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
-                borderRadius: 2,
-                fontWeight: 700,
-                fontSize: '0.9rem',
-                px: 3,
-                py: 1,
-                minWidth: 'auto',
-                textTransform: 'none',
-                boxShadow: '0 4px 12px rgba(162, 89, 255, 0.4)',
-                '&:hover': {
-                  background: 'linear-gradient(45deg, #9147e6 30%, #7a36d9 90%)',
-                  boxShadow: '0 6px 16px rgba(162, 89, 255, 0.6)',
-                  transform: 'translateY(-1px)',
-                },
-                transition: 'all 0.2s ease-in-out'
-              }}
-            >
-              Daily Bonus
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1.5 }}>
+              <Button
+                variant="contained"
+                size="medium"
+                onClick={handleClaimLoginBonus}
+                sx={{
+                  background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
+                  borderRadius: 2,
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  px: 3,
+                  py: 1,
+                  minWidth: 'auto',
+                  textTransform: 'none',
+                  boxShadow: '0 4px 12px rgba(162, 89, 255, 0.4)',
+                  '&:hover': {
+                    background: 'linear-gradient(45deg, #9147e6 30%, #7a36d9 90%)',
+                    boxShadow: '0 6px 16px rgba(162, 89, 255, 0.6)',
+                    transform: 'translateY(-1px)',
+                  },
+                  transition: 'all 0.2s ease-in-out'
+                }}
+              >
+                Daily Bonus
+              </Button>
+              
+              <Button
+                variant="outlined"
+                size="medium"
+                onClick={handleShowPredictions}
+                startIcon={<Lightbulb />}
+                sx={{
+                  borderColor: '#A259FF',
+                  color: '#A259FF',
+                  borderRadius: 2,
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  px: 3,
+                  py: 1,
+                  textTransform: 'none',
+                  '&:hover': {
+                    borderColor: '#8a3ffb',
+                    background: 'rgba(162, 89, 255, 0.1)',
+                    color: '#8a3ffb',
+                  },
+                }}
+              >
+                Smart Tips
+              </Button>
+            </Box>
           </Box>
 
           {/* Professional Progress Bar */}
@@ -432,6 +660,155 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade }) => {
             sx={{ color: '#A259FF' }}
           >
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Predictive Recommendations Dialog */}
+      <Dialog
+        open={showPredictions}
+        onClose={() => setShowPredictions(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'linear-gradient(135deg, #1E103C 0%, #2D1B69 100%)',
+            color: 'white',
+            borderRadius: 3
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          pb: 1
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Lightbulb sx={{ color: '#A259FF', fontSize: 28 }} />
+            <Typography variant="h5" sx={{ fontWeight: 600 }}>
+              Smart Tier Recommendations
+            </Typography>
+          </Box>
+          <IconButton onClick={() => setShowPredictions(false)} sx={{ color: '#ccc' }}>
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          {predictions ? (
+            <Box>
+              {/* Tier Progress Summary */}
+              <Box sx={{ 
+                p: 3, 
+                mb: 3, 
+                bgcolor: 'rgba(162, 89, 255, 0.1)',
+                borderRadius: 2,
+                border: '1px solid rgba(162, 89, 255, 0.3)'
+              }}>
+                <Typography variant="h6" sx={{ mb: 2, color: '#A259FF' }}>
+                  Your Tier Journey
+                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Box>
+                    <Typography variant="body1" sx={{ color: '#ccc' }}>
+                      Current: {predictions.currentTier.tier_name.charAt(0).toUpperCase() + predictions.currentTier.tier_name.slice(1)}
+                    </Typography>
+                    <Typography variant="body1" sx={{ color: '#ccc' }}>
+                      Next: {predictions.nextTier.tier_name.charAt(0).toUpperCase() + predictions.nextTier.tier_name.slice(1)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="h4" sx={{ color: '#A259FF', fontWeight: 'bold' }}>
+                      {predictions.pointsNeeded}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#ccc' }}>
+                      points needed
+                    </Typography>
+                  </Box>
+                </Box>
+                {predictions.daysToNextTier <= 30 && (
+                  <Typography variant="body2" sx={{ color: '#4CAF50' }}>
+                    🎯 Estimated time to next tier: {predictions.daysToNextTier} days
+                  </Typography>
+                )}
+              </Box>
+
+              {/* Recommendations */}
+              <Typography variant="h6" sx={{ mb: 2, color: '#A259FF' }}>
+                Personalized Recommendations
+              </Typography>
+              <List>
+                {predictions.recommendations.map((rec: any, index: number) => (
+                  <ListItem key={index} sx={{ 
+                    px: 0, 
+                    mb: 2,
+                    bgcolor: rec.priority === 'high' ? 'rgba(255, 87, 34, 0.1)' : 'rgba(162, 89, 255, 0.05)',
+                    borderRadius: 2,
+                    border: rec.priority === 'high' ? '1px solid rgba(255, 87, 34, 0.3)' : '1px solid rgba(162, 89, 255, 0.2)'
+                  }}>
+                    <ListItemIcon sx={{ minWidth: 40 }}>
+                      {rec.icon}
+                    </ListItemIcon>
+                    <ListItemText 
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                          <Typography variant="h6" sx={{ color: 'white', fontWeight: 600 }}>
+                            {rec.title}
+                          </Typography>
+                          {rec.points > 0 && (
+                            <Chip
+                              label={`+${rec.points} pts`}
+                              size="small"
+                              sx={{
+                                bgcolor: rec.priority === 'high' ? '#FF5722' : '#A259FF',
+                                color: 'white',
+                                fontSize: '0.7rem',
+                                height: 20
+                              }}
+                            />
+                          )}
+                        </Box>
+                      }
+                      secondary={
+                        <Box>
+                          <Typography variant="body2" sx={{ color: '#ccc', mb: 1 }}>
+                            {rec.description}
+                          </Typography>
+                          <Typography variant="body2" sx={{ 
+                            color: '#A259FF', 
+                            fontWeight: 500,
+                            fontStyle: 'italic'
+                          }}>
+                            💡 {rec.action}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </Box>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="h6" sx={{ color: '#ccc', mb: 2 }}>
+                No recommendations available
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#999' }}>
+                We need more data to generate personalized recommendations for you.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 0 }}>
+          <Button
+            onClick={() => setShowPredictions(false)}
+            sx={{
+              background: '#A259FF',
+              color: 'white',
+              '&:hover': { background: '#8B4FE6' }
+            }}
+          >
+            Got it!
           </Button>
         </DialogActions>
       </Dialog>

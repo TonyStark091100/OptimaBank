@@ -1,5 +1,78 @@
 // API service for OptimaBank Loyalty System
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://127.0.0.1:8000';
+
+// Mini-Games API
+export const gamesApi = {
+  getGames: async (): Promise<MiniGame[]> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/games/`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch mini-games');
+    const data = await response.json();
+    return data.games;
+  },
+
+  submitScore: async (gameId: number, score: number, durationSeconds: number): Promise<GameScoreResult> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/games/submit-score/`, {
+      method: 'POST',
+      headers: {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        game_id: gameId,
+        score: score,
+        duration_seconds: durationSeconds,
+      }),
+    });
+    if (!response.ok) throw new Error('Failed to submit score');
+    return response.json();
+  },
+
+  getGameHistory: async (): Promise<GameSession[]> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/games/history/`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch game history');
+    const data = await response.json();
+    return data.history;
+  },
+};
+
+// Leaderboard API
+export const leaderboardApi = {
+  getLeaderboard: async (limit: number = 50, includePrivate: boolean = false): Promise<LeaderboardEntry[]> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/leaderboard/?limit=${limit}&include_private=${includePrivate}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch leaderboard');
+    const data = await response.json();
+    return data.leaderboard;
+  },
+
+  updatePrivacy: async (isPublic: boolean): Promise<PrivacyUpdateResult> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/leaderboard/privacy/`, {
+      method: 'POST',
+      headers: {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        is_public: isPublic,
+      }),
+    });
+    if (!response.ok) throw new Error('Failed to update privacy settings');
+    return response.json();
+  },
+
+  getUserStats: async (): Promise<LeaderboardStats> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/leaderboard/stats/`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch leaderboard stats');
+    return response.json();
+  },
+};
 
 // Helper function to get auth token
 const getAuthToken = (): string | null => {
@@ -9,6 +82,10 @@ const getAuthToken = (): string | null => {
 // Helper function to get auth headers
 const getAuthHeaders = (): HeadersInit => {
   const token = getAuthToken();
+  console.log('getAuthHeaders - token found:', !!token);
+  if (token) {
+    console.log('getAuthHeaders - token preview:', token.substring(0, 20) + '...');
+  }
   return {
     'Content-Type': 'application/json',
     ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -93,6 +170,7 @@ export interface RedemptionResponse {
   points_remaining?: number;
   redemptions?: Redemption[];
   total_points_used?: number;
+  is_multi_voucher?: boolean;
 }
 
 // Notification interfaces
@@ -101,6 +179,58 @@ export interface Notification {
   message: string;
   read: boolean;
   created_at: string;
+}
+
+// Mini-Games Types
+export interface MiniGame {
+  id: number;
+  name: string;
+  game_type: 'spin_wheel' | 'memory_game' | 'trivia_quiz' | 'daily_challenge';
+  description: string;
+  base_points: number;
+  max_points: number;
+}
+
+export interface GameSession {
+  id: number;
+  game_name: string;
+  game_type: string;
+  score: number;
+  points_earned: number;
+  played_at: string;
+  duration_seconds: number;
+}
+
+export interface GameScoreResult {
+  success: boolean;
+  points_earned: number;
+  total_points: number;
+  game_session_id: number;
+}
+
+// Leaderboard Types
+export interface LeaderboardEntry {
+  rank: number;
+  user_id: number;
+  username: string;
+  email?: string;
+  total_points: number;
+  tier_name: string;
+  last_updated: string;
+  is_current_user?: boolean;
+}
+
+export interface LeaderboardStats {
+  rank: number;
+  total_points: number;
+  tier_name: string;
+  is_public: boolean;
+  last_updated: string;
+}
+
+export interface PrivacyUpdateResult {
+  success: boolean;
+  is_public: boolean;
 }
 
 // Chatbot interfaces
@@ -137,12 +267,20 @@ export const voucherApi = {
     if (category) params.append('category', category);
     if (search) params.append('search', search);
     
+    const headers = getAuthHeaders();
+    console.log('getVouchers - headers:', headers);
+    
     const response = await fetch(`${API_BASE_URL}/accounts/vouchers/?${params}`, {
-      headers: getAuthHeaders(),
+      headers,
     });
     
+    console.log('getVouchers response status:', response.status);
+    console.log('getVouchers response ok:', response.ok);
+    
     if (!response.ok) {
-      throw new Error('Failed to fetch vouchers');
+      const errorText = await response.text();
+      console.error('getVouchers error response:', errorText);
+      throw new Error(`Failed to fetch vouchers: ${response.status} - ${errorText}`);
     }
     
     return response.json();
@@ -309,16 +447,25 @@ export const redemptionApi = {
 
   // Serve voucher PDF directly
   serveVoucherPdf: async (redemptionId: string): Promise<Blob> => {
-    const response = await fetch(`${API_BASE_URL}/accounts/redemptions/${redemptionId}/serve/`, {
+    console.log(`Requesting PDF for redemption ID: ${redemptionId}`);
+    const url = `${API_BASE_URL}/accounts/redemptions/${redemptionId}/serve/`;
+    console.log(`PDF URL: ${url}`);
+    
+    const response = await fetch(url, {
       headers: getAuthHeaders(),
     });
     
+    console.log(`PDF response status: ${response.status}`);
+    
     if (!response.ok) {
       const errorData = await response.json();
+      console.error(`PDF serve error:`, errorData);
       throw new Error(errorData.error || 'Failed to serve PDF');
     }
     
-    return response.blob();
+    const blob = await response.blob();
+    console.log(`PDF blob created: ${blob.size} bytes, type: ${blob.type}`);
+    return blob;
   },
 };
 
@@ -391,20 +538,38 @@ export const authApi = {
   },
 
   // Google authentication
-  googleAuth: async (token: string): Promise<any> => {
-    // For demo purposes, extract email from Google token and use regular login
+  googleAuth: async (token: string, action: 'signup' | 'login' = 'login'): Promise<any> => {
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const email = payload.email;
+      const response = await fetch(`${API_BASE_URL}/api/auth/google/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token, action }),
+      });
       
-      if (!email) {
-        throw new Error('No email found in Google token');
+      const data = await response.json();
+      
+      if (!response.ok) {
+        // Enhanced error handling with specific error types
+        const error = new Error(data.detail || 'Google authentication failed');
+        (error as any).errorType = data.error_type;
+        (error as any).email = data.email;
+        throw error;
       }
       
-      // Use the regular login endpoint with Google email
-      return await authApi.login(email, 'google_auth_demo');
+      // Store tokens in localStorage
+      if (data.access) {
+        localStorage.setItem('access_token', data.access);
+      }
+      if (data.refresh) {
+        localStorage.setItem('refresh_token', data.refresh);
+      }
+      
+      return data;
     } catch (error) {
-      throw new Error('Invalid Google token');
+      console.error('Google auth error:', error);
+      throw error;
     }
   },
 
@@ -479,7 +644,10 @@ export const downloadPdf = (pdfUrl: string, filename: string = 'voucher.pdf') =>
 // Utility function to download PDF blob
 export const downloadPdfBlob = async (redemptionId: string, filename: string = 'voucher.pdf') => {
   try {
+    console.log(`Downloading PDF for redemption ID: ${redemptionId}, filename: ${filename}`);
+    
     const blob = await redemptionApi.serveVoucherPdf(redemptionId);
+    console.log(`PDF blob received, size: ${blob.size} bytes, type: ${blob.type}`);
     
     // Ensure filename has .pdf extension
     if (!filename.toLowerCase().endsWith('.pdf')) {
@@ -500,6 +668,8 @@ export const downloadPdfBlob = async (redemptionId: string, filename: string = '
     
     // Clean up the blob URL
     window.URL.revokeObjectURL(url);
+    
+    console.log(`PDF download initiated for: ${filename}`);
   } catch (error) {
     console.error('Failed to download PDF:', error);
     throw error;
@@ -607,10 +777,7 @@ export const tierApi = {
   getTierBenefits: async (tierId: number): Promise<TierBenefit[]> => {
     const response = await fetch(`${API_BASE_URL}/accounts/tiers/${tierId}/benefits/`, {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(),
     });
     
     const data = await response.json();
@@ -689,13 +856,15 @@ export const tierApi = {
   },
 };
 
-// Chatbot APIs
+// Chatbot APIs (No authentication required)
 export const chatbotApi = {
   // Start a new chat session
   startChat: async (): Promise<ChatSession> => {
     const response = await fetch(`${API_BASE_URL}/chatbot/start/`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
     
     if (!response.ok) {
@@ -709,7 +878,9 @@ export const chatbotApi = {
   sendMessage: async (message: string, sessionId?: string): Promise<ChatResponse> => {
     const response = await fetch(`${API_BASE_URL}/chatbot/send/`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({ message, session_id: sessionId }),
     });
     
@@ -723,7 +894,9 @@ export const chatbotApi = {
   // Get chat history for a session
   getChatHistory: async (sessionId: string): Promise<ChatSession> => {
     const response = await fetch(`${API_BASE_URL}/chatbot/sessions/${sessionId}/`, {
-      headers: getAuthHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
     
     if (!response.ok) {
@@ -750,7 +923,9 @@ export const chatbotApi = {
   endChat: async (sessionId: string): Promise<{ message: string }> => {
     const response = await fetch(`${API_BASE_URL}/chatbot/sessions/${sessionId}/end/`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
     
     if (!response.ok) {
@@ -766,6 +941,7 @@ export interface RealtimeChartData {
   hour: string;
   users: number;
   timestamp: string;
+  activity_level: 'low' | 'medium' | 'high';
 }
 
 export interface RealtimeMetrics {
@@ -775,13 +951,62 @@ export interface RealtimeMetrics {
   tier_distribution: { [key: string]: number };
   server_time: string;
   uptime_hours: number;
+  current_activity: number;
+  peak_activity_today: number;
+  avg_activity_today: number;
+}
+
+// User Spending Analytics Interfaces
+export interface UserSpendingData {
+  totalSpent: number;
+  totalSaved: number;
+  monthlySpending: Array<{ month: string; amount: number }>;
+  categoryBreakdown: Array<{ category: string; amount: number; percentage: number }>;
+  roi: number;
+  averageMonthlySpending: number;
+  projectedYearlySavings: number;
+  topCategories: Array<{ category: string; count: number }>;
+  recentRedemptions: Array<{ date: string; voucher: string; points: number; savings: number }>;
+  achievements: Array<UserAchievement>;
+  lastUpdated: string;
+}
+
+export interface UserAchievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  unlocked: boolean;
+  unlockedDate?: string;
+  progress?: number;
+  total?: number;
+  category: 'spending' | 'redemption' | 'tier' | 'loyalty' | 'special';
+}
+
+export interface UserRedemptionHistory {
+  redemptions: Array<{
+    id: string;
+    date: string;
+    voucher_title: string;
+    voucher_category: string;
+    points_spent: number;
+    value_saved: number;
+    status: string;
+  }>;
+  total_redemptions: number;
+  total_points_spent: number;
+  total_savings: number;
 }
 
 export interface LiveUserCount {
   active_users: number;
+  active_users_15min: number;
+  active_users_1hour: number;
   total_users: number;
   online_users: number;
+  activity_trend: number;
   timestamp: string;
+  status: string;
 }
 
 // Real-time Analytics APIs
@@ -824,6 +1049,54 @@ export const analyticsApi = {
     }
     
     return data;
+  },
+
+  // Get user-specific spending analytics
+  getUserSpendingAnalytics: async (): Promise<UserSpendingData> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/analytics/user-spending/`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get user spending analytics');
+    }
+    
+    return data;
+  },
+
+  // Get user redemption history
+  getUserRedemptionHistory: async (): Promise<UserRedemptionHistory> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/analytics/user-redemptions/`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get user redemption history');
+    }
+    
+    return data;
+  },
+
+  // Get user achievements
+  getUserAchievements: async (): Promise<UserAchievement[]> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/analytics/user-achievements/`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get user achievements');
+    }
+    
+    return data.achievements || [];
   },
 };
 
