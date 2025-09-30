@@ -431,7 +431,25 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
 
   const handleRedeemNow = async (voucher: Voucher) => {
     try {
+      console.log('Starting voucher redemption for:', voucher.title);
+      
+      // Check if user has enough points
+      if (userProfile && userProfile.points < voucher.points) {
+        setSnackbarMessage(`Insufficient points. You need ${voucher.points} points but have ${userProfile.points}.`);
+        setSnackbarOpen(true);
+        return;
+      }
+      
+      // Check authentication
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        setSnackbarMessage('Please log in to redeem vouchers.');
+        setSnackbarOpen(true);
+        return;
+      }
+      
       const result = await redemptionApi.redeemVoucher(voucher.id, 1);
+      console.log('Redemption result:', result);
       
       // Check different possible response structures
       let redemptionId = null;
@@ -440,16 +458,37 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
         redemptionId = result.redemptions[0].id;
       } else if (result.redemption_id) {
         redemptionId = result.redemption_id;
+      } else if (result.id) {
+        redemptionId = result.id;
       } else {
-        throw new Error('No redemption ID found in response');
+        console.warn('No redemption ID found in response:', result);
+        // Still show success message even without PDF
+        setSnackbarMessage(`Successfully redeemed ${voucher.title}!`);
+        setSnackbarOpen(true);
+        
+        // Refresh user profile and vouchers
+        const [updatedProfile, updatedVouchers] = await Promise.all([
+          userApi.getProfile(),
+          voucherApi.getVouchers()
+        ]);
+        setUserProfile(updatedProfile);
+        setVouchers(updatedVouchers);
+        return;
       }
       
       if (redemptionId) {
-        const filename = `${voucher.title.replace(/[^a-zA-Z0-9]/g, '_')}_voucher.pdf`;
-        await downloadPdfBlob(redemptionId, filename);
+        try {
+          const filename = `${voucher.title.replace(/[^a-zA-Z0-9]/g, '_')}_voucher.pdf`;
+          await downloadPdfBlob(redemptionId, filename);
+          setSnackbarMessage(`Successfully redeemed ${voucher.title}! PDF downloaded to your Downloads folder.`);
+        } catch (pdfError) {
+          console.error('PDF download error:', pdfError);
+          setSnackbarMessage(`Successfully redeemed ${voucher.title}! (PDF download failed)`);
+        }
+      } else {
+        setSnackbarMessage(`Successfully redeemed ${voucher.title}!`);
       }
       
-      setSnackbarMessage(`Successfully redeemed ${voucher.title}! PDF downloaded to your Downloads folder.`);
       setSnackbarOpen(true);
       
       // Refresh user profile and vouchers
@@ -462,7 +501,28 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
       
     } catch (err) {
       console.error('Error redeeming voucher:', err);
-      setSnackbarMessage(err instanceof Error ? err.message : 'Failed to redeem voucher');
+      
+      let errorMessage = 'Failed to redeem voucher';
+      
+      if (err instanceof Error) {
+        errorMessage = err.message;
+        
+        // Handle specific error cases
+        if (errorMessage.includes('Network error')) {
+          errorMessage = 'Network error: Unable to connect to server. Please check your internet connection and try again.';
+        } else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+          errorMessage = 'Authentication failed. Please log in again.';
+          // Clear invalid tokens
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+        } else if (errorMessage.includes('Insufficient points')) {
+          errorMessage = `Insufficient points. You need ${voucher.points} points to redeem this voucher.`;
+        } else if (errorMessage.includes('Insufficient quantity')) {
+          errorMessage = 'This voucher is currently out of stock.';
+        }
+      }
+      
+      setSnackbarMessage(errorMessage);
       setSnackbarOpen(true);
     }
   };

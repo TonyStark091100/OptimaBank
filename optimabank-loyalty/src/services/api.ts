@@ -92,6 +92,36 @@ const getAuthHeaders = (): HeadersInit => {
   };
 };
 
+// Helper function to test server connectivity
+export const testServerConnectivity = async (): Promise<boolean> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/accounts/categories/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Server connectivity test failed:', error);
+    return false;
+  }
+};
+
+// Helper function to test authentication
+export const testAuthentication = async (): Promise<boolean> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/accounts/profile/`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Authentication test failed:', error);
+    return false;
+  }
+};
+
 // API response interface
 interface ApiResponse<T = any> {
   data?: T;
@@ -164,6 +194,7 @@ export interface Redemption {
 
 export interface RedemptionResponse {
   message: string;
+  id?: string;
   redemption_id?: string;
   coupon_code?: string;
   pdf_url?: string;
@@ -399,19 +430,37 @@ export const cartApi = {
 export const redemptionApi = {
   // Redeem a single voucher
   redeemVoucher: async (voucherId: number, quantity: number = 1): Promise<RedemptionResponse> => {
-    const response = await fetch(`${API_BASE_URL}/accounts/redeem/`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ voucher_id: voucherId, quantity }),
-    });
+    console.log('redeemVoucher called with:', { voucherId, quantity });
     
-    const data = await response.json();
+    const headers = getAuthHeaders();
+    console.log('redeemVoucher headers:', headers);
     
-    if (!response.ok) {
-      throw new Error(data.error || 'Failed to redeem voucher');
+    try {
+      const response = await fetch(`${API_BASE_URL}/accounts/redeem/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ voucher_id: voucherId, quantity }),
+      });
+      
+      console.log('redeemVoucher response status:', response.status);
+      console.log('redeemVoucher response ok:', response.ok);
+      
+      const data = await response.json();
+      console.log('redeemVoucher response data:', data);
+      
+      if (!response.ok) {
+        console.error('redeemVoucher error:', data);
+        throw new Error(data.error || data.detail || 'Failed to redeem voucher');
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('redeemVoucher fetch error:', error);
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        throw new Error('Network error: Unable to connect to server. Please check your internet connection.');
+      }
+      throw error;
     }
-    
-    return data;
   },
 
   // Checkout entire cart
