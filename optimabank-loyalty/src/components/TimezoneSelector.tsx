@@ -327,8 +327,10 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
               bgcolor: 'rgba(162, 89, 255, 0.15)',
               border: '2px solid rgba(162, 89, 255, 0.4)',
               borderRadius: '12px',
-              width: 48,
-              height: 48,
+              width: size === 'small' ? 32 : size === 'large' ? 56 : 48,
+              height: size === 'small' ? 32 : size === 'large' ? 56 : 48,
+              minWidth: size === 'small' ? 32 : size === 'large' ? 56 : 48,
+              minHeight: size === 'small' ? 32 : size === 'large' ? 56 : 48,
               backdropFilter: 'blur(10px)',
               boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
               '&:hover': {
@@ -339,7 +341,7 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
               },
               transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
               '& .MuiSvgIcon-root': {
-                fontSize: '1.5rem',
+                fontSize: size === 'small' ? '1rem' : size === 'large' ? '1.8rem' : '1.5rem',
                 filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
               }
             }}

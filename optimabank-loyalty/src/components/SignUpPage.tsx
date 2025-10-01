@@ -45,6 +45,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
   const navigate = useNavigate();
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down("md"));
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [formData, setFormData] = useState<{
     firstName?: string;
@@ -57,8 +58,6 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
   const [otp, setOtp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  // Snackbar for biometric question (stays until user chooses)
-  const [biometricSnackbarOpen, setBiometricSnackbarOpen] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -128,13 +127,8 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
         return;
       }
 
-      // only ask if on mobile/tablet and user hasn't made a biometric decision before
-      const alreadyDecided = localStorage.getItem("biometricChoiceMade") === "true";
-      if ((isMobile || isTablet) && !alreadyDecided) {
-        setBiometricSnackbarOpen(true); // will stay open until user presses Yes/No
-      } else {
-        navigate("/main");
-      }
+      // Navigate to main page - biometric popup will be handled by App.tsx after OTP verification
+      navigate("/main");
     } catch (err) {
       console.error(err);
       onShowSnackbar("Invalid OTP, try again!", 'error');
@@ -215,22 +209,6 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
     }
   };
 
-  // When user chooses Yes on snackbar
-  const handleBiometricYes = async () => {
-    // keep snackbar until this completes; once done, navigate away
-    await registerBiometricClientSide(); // Removed the unused 'ok' variable
-    setBiometricSnackbarOpen(false);
-    // navigate to main regardless (after successful signup)
-    navigate("/main");
-  };
-
-  // When user chooses No on snackbar — record choice so we never ask again
-  const handleBiometricNo = () => {
-    localStorage.setItem("biometricChoiceMade", "true");
-    localStorage.setItem("biometricEnabled", "false");
-    setBiometricSnackbarOpen(false);
-    navigate("/main");
-  };
 
   return (
     <Box
@@ -529,26 +507,6 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
         </Box>
       )}
 
-      {/* Biometric Snackbar (persistent until user chooses) */}
-      <Snackbar
-        open={biometricSnackbarOpen}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        message="Enable biometric login for faster, secure access?"
-        action={
-          <Stack direction="row" spacing={1}>
-            <Button size="small" onClick={handleBiometricYes} sx={{ color: "#A259FF" }}>
-              Yes
-            </Button>
-            <Button size="small" onClick={handleBiometricNo} sx={{ color: "#fff" }}>
-              No
-            </Button>
-          </Stack>
-        }
-        // don't auto-hide; keep until user explicitly clicks Yes or No
-        onClose={() => {
-          /* intentionally empty to keep snackbar open until button press */
-        }}
-      />
     </Box>
   );
 };

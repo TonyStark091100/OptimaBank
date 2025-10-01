@@ -9,7 +9,9 @@ import {
   Box,
   IconButton,
   Alert,
-  CircularProgress
+  CircularProgress,
+  useTheme,
+  useMediaQuery
 } from '@mui/material';
 import {
   Fingerprint,
@@ -31,6 +33,8 @@ const BiometricSetupPopup: React.FC<BiometricSetupPopupProps> = ({
   onEnable,
   onDecline
 }) => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -72,12 +76,14 @@ const BiometricSetupPopup: React.FC<BiometricSetupPopupProps> = ({
       onClose={handleClose}
       maxWidth="sm"
       fullWidth
+      fullScreen={isMobile}
       PaperProps={{
         sx: {
-          borderRadius: 3,
+          borderRadius: isMobile ? 0 : 3,
           background: 'linear-gradient(135deg, #1E103C 0%, #2D1B69 100%)',
           border: '1px solid rgba(162, 89, 255, 0.3)',
-          color: 'white'
+          color: 'white',
+          minHeight: isMobile ? '100vh' : 'auto'
         }
       }}
     >
@@ -163,10 +169,20 @@ const BiometricSetupPopup: React.FC<BiometricSetupPopupProps> = ({
         </Box>
       </DialogContent>
 
-      <DialogActions sx={{ p: 3, pt: 0, gap: 1 }}>
+      <DialogActions sx={{ 
+        p: isMobile ? 2 : 3, 
+        pt: 0, 
+        gap: 1,
+        flexDirection: isMobile ? 'column' : 'row',
+        '& .MuiButton-root': {
+          minHeight: isMobile ? 48 : 'auto',
+          fontSize: isMobile ? '1rem' : '0.875rem'
+        }
+      }}>
         <Button
           onClick={handleDecline}
           disabled={isLoading}
+          fullWidth={isMobile}
           sx={{
             color: '#ccc',
             borderColor: '#555',
@@ -183,6 +199,7 @@ const BiometricSetupPopup: React.FC<BiometricSetupPopupProps> = ({
         <Button
           onClick={handleEnable}
           disabled={isLoading}
+          fullWidth={isMobile}
           sx={{
             background: '#A259FF',
             color: 'white',

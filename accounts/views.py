@@ -642,6 +642,7 @@ def remove_from_cart(request, item_id):
 @permission_classes([IsAuthenticated])
 def redeem_voucher(request):
     """Redeem a single voucher"""
+    
     voucher_id = request.data.get('voucher_id')
     quantity = request.data.get('quantity', 1)
 

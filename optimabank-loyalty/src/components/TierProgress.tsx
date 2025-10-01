@@ -16,6 +16,8 @@ import {
   ListItemIcon,
   ListItemText,
   IconButton,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import {
   Star,
@@ -42,6 +44,11 @@ interface TierProgressProps {
 }
 
 const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackbar }) => {
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
+  const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
+  
   const [tierData, setTierData] = useState<TierProgressData | null>(null);
   const [allTiers, setAllTiers] = useState<RewardTier[]>([]);
   const [benefitsDialogOpen, setBenefitsDialogOpen] = useState(false);
@@ -376,18 +383,40 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
         border: '1px solid rgba(162, 89, 255, 0.3)',
         boxShadow: '0 4px 16px 0 rgba(162,89,255,0.15)',
       }}>
-        <CardContent sx={{ p: 2.5 }}>
+        <CardContent sx={{ 
+          p: isMobile ? 2 : 2.5,
+          ...(isMobile && {
+            paddingX: 2,
+            paddingY: 2
+          })
+        }}>
           {/* Professional Header */}
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Typography variant="h4" sx={{ fontSize: '2rem', filter: 'drop-shadow(0 0 8px rgba(162, 89, 255, 0.5))' }}>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: isSmallMobile ? 'center' : 'space-between', 
+            mb: 2,
+            flexDirection: isSmallMobile ? 'column' : 'row',
+            gap: isSmallMobile ? 2 : 0
+          }}>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: isMobile ? 1 : 1.5,
+              justifyContent: isMobile ? 'center' : 'flex-start',
+              width: isMobile ? '100%' : 'auto'
+            }}>
+              <Typography variant="h4" sx={{ 
+                fontSize: isSmallMobile ? '1.6rem' : isMobile ? '1.8rem' : '2rem', 
+                filter: 'drop-shadow(0 0 8px rgba(162, 89, 255, 0.5))' 
+              }}>
                 {getTierIcon(current_tier.tier_name)}
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Typography variant="h6" sx={{ 
                   color: 'white', 
                   fontWeight: 700, 
-                  fontSize: '1.25rem', 
+                  fontSize: isSmallMobile ? '1rem' : isMobile ? '1.1rem' : '1.25rem', 
                   lineHeight: 1.2,
                   textShadow: '0 2px 4px rgba(0,0,0,0.3)'
                 }}>
@@ -396,11 +425,13 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
                 <IconButton
                   onClick={() => handleViewBenefits(current_tier.id)}
                   sx={{
-                    width: 24,
-                    height: 24,
+                    width: isMobile ? 8 : 24,
+                    height: isMobile ? 8 : 24,
                     backgroundColor: 'rgba(162, 89, 255, 0.2)',
                     border: '1px solid rgba(162, 89, 255, 0.5)',
                     color: '#A259FF',
+                    minWidth: isMobile ? 8 : 24,
+                    minHeight: isMobile ? 8 : 24,
                     '&:hover': {
                       backgroundColor: 'rgba(162, 89, 255, 0.3)',
                       border: '1px solid #A259FF',
@@ -411,27 +442,38 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
                     boxShadow: '0 1px 4px rgba(162, 89, 255, 0.2)',
                   }}
                 >
-                  <Typography variant="body2" sx={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
+                  <Typography variant="body2" sx={{ 
+                    fontSize: isMobile ? '0.4rem' : '0.8rem', 
+                    fontWeight: 'bold',
+                    lineHeight: 1
+                  }}>
                     !
                   </Typography>
                 </IconButton>
               </Box>
             </Box>
             
-            <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Box sx={{ 
+              display: 'flex', 
+              gap: isMobile ? 1 : 1.5,
+              flexDirection: isMobile ? 'column' : 'row',
+              width: isMobile ? '100%' : 'auto'
+            }}>
               <Button
                 variant="contained"
-                size="medium"
+                size={isMobile ? "small" : "medium"}
                 onClick={handleClaimLoginBonus}
+                startIcon={<Star />}
                 sx={{
                   background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
                   borderRadius: 2,
                   fontWeight: 700,
-                  fontSize: '0.9rem',
-                  px: 3,
-                  py: 1,
+                  fontSize: isMobile ? '0.8rem' : '0.9rem',
+                  px: isMobile ? 2 : 3,
+                  py: isMobile ? 0.8 : 1,
                   minWidth: 'auto',
                   textTransform: 'none',
+                  width: isMobile ? '100%' : 'auto',
                   boxShadow: '0 4px 12px rgba(162, 89, 255, 0.4)',
                   '&:hover': {
                     background: 'linear-gradient(45deg, #9147e6 30%, #7a36d9 90%)',
@@ -446,7 +488,7 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
               
               <Button
                 variant="outlined"
-                size="medium"
+                size={isMobile ? "small" : "medium"}
                 onClick={handleShowPredictions}
                 startIcon={<Lightbulb />}
                 sx={{
@@ -454,10 +496,11 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
                   color: '#A259FF',
                   borderRadius: 2,
                   fontWeight: 600,
-                  fontSize: '0.9rem',
-                  px: 3,
-                  py: 1,
+                  fontSize: isMobile ? '0.8rem' : '0.9rem',
+                  px: isMobile ? 2 : 3,
+                  py: isMobile ? 0.8 : 1,
                   textTransform: 'none',
+                  width: isMobile ? '100%' : 'auto',
                   '&:hover': {
                     borderColor: '#8a3ffb',
                     background: 'rgba(162, 89, 255, 0.1)',
@@ -473,17 +516,24 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
           {/* Professional Progress Bar */}
           {next_tier && (
             <Box sx={{ mb: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: isMobile ? 'center' : 'space-between', 
+                mb: 1,
+                flexDirection: isMobile ? 'column' : 'row',
+                gap: isMobile ? 0.5 : 0,
+                textAlign: isMobile ? 'center' : 'left'
+              }}>
                 <Typography variant="body2" sx={{ 
                   color: 'rgba(255, 255, 255, 0.9)', 
-                  fontSize: '0.95rem',
+                  fontSize: isMobile ? '0.85rem' : '0.95rem',
                   fontWeight: 600
                 }}>
                   Progress to {next_tier.tier_name.charAt(0).toUpperCase() + next_tier.tier_name.slice(1)}
                 </Typography>
                 <Typography variant="body2" sx={{ 
                   color: getTierColor(next_tier.tier_name), 
-                  fontSize: '0.95rem',
+                  fontSize: isMobile ? '0.85rem' : '0.95rem',
                   fontWeight: 700
                 }}>
                   {Math.round(progress_percentage)}%
@@ -493,7 +543,7 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
                 variant="determinate"
                 value={progress_percentage}
                 sx={{
-                  height: 8,
+                  height: isMobile ? 6 : 8,
                   borderRadius: 4,
                   backgroundColor: 'rgba(255, 255, 255, 0.15)',
                   boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
@@ -508,8 +558,9 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
                 color: 'rgba(255, 255, 255, 0.7)', 
                 mt: 0.8, 
                 display: 'block', 
-                fontSize: '0.85rem',
-                fontWeight: 500
+                fontSize: isMobile ? '0.8rem' : '0.85rem',
+                fontWeight: 500,
+                textAlign: isMobile ? 'center' : 'left'
               }}>
                 {points_to_next_tier.toLocaleString()} points to next tier
               </Typography>
@@ -526,12 +577,13 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
         onClose={() => setBenefitsDialogOpen(false)}
         maxWidth="md"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{
           sx: {
             background: 'linear-gradient(135deg, rgba(34,34,50,0.98) 0%, rgba(20,20,30,0.98) 100%)',
             border: '1px solid rgba(162, 89, 255, 0.4)',
             color: 'white',
-            borderRadius: 3,
+            borderRadius: isMobile ? 0 : 3,
             boxShadow: '0 8px 32px rgba(162,89,255,0.3)',
           }
         }}
@@ -670,11 +722,12 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
         onClose={() => setShowPredictions(false)}
         maxWidth="md"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{
           sx: {
             background: 'linear-gradient(135deg, #1E103C 0%, #2D1B69 100%)',
             color: 'white',
-            borderRadius: 3
+            borderRadius: isMobile ? 0 : 3
           }
         }}
       >

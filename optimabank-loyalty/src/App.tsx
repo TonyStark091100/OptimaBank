@@ -7,6 +7,7 @@ import { GoogleOAuthProvider, CredentialResponse } from "@react-oauth/google";
 import { authApi } from "./services/api";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { TimezoneProvider } from "./contexts/TimezoneContext";
+import { suppressResizeObserverErrors, addResizeObserverCSSFix } from "./utils/resizeObserverFix";
 
 import LoadingPage from "./components/LoadingPage";
 import WelcomePage from "./components/WelcomePage";
@@ -26,6 +27,21 @@ const AppInner: React.FC = () => {
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error' | 'warning' | 'info'>('info');
+
+  // Fix ResizeObserver loop error
+  useEffect(() => {
+    const handleResizeObserverError = (e: ErrorEvent) => {
+      if (e.message === 'ResizeObserver loop completed with undelivered notifications.') {
+        e.stopImmediatePropagation();
+      }
+    };
+
+    window.addEventListener('error', handleResizeObserverError);
+    
+    return () => {
+      window.removeEventListener('error', handleResizeObserverError);
+    };
+  }, []);
 
   const handleLoadingComplete = () => setLoading(false);
 
@@ -80,17 +96,37 @@ const AppInner: React.FC = () => {
 
   // Check if biometric popup should be shown
   const shouldShowBiometricPopup = () => {
-    // Only show on mobile/tablet devices
-    if (!isMobileOrTablet) return false;
+    console.log('Checking biometric popup conditions:', {
+      isMobileOrTablet,
+      biometricChoice: localStorage.getItem('biometricChoice'),
+      webauthnSupported: !!(window.PublicKeyCredential && typeof window.PublicKeyCredential === "function"),
+      userAgent: navigator.userAgent,
+      screenWidth: window.innerWidth,
+      hasTouch: 'ontouchstart' in window || navigator.maxTouchPoints > 0
+    });
+    
+    // Show on mobile/tablet devices OR in mobile simulator
+    const isMobileSimulator = window.innerWidth <= 768 || ('ontouchstart' in window);
+    if (!isMobileOrTablet && !isMobileSimulator) {
+      console.log('Not mobile device or simulator');
+      return false;
+    }
     
     // Check if user has already made a choice
     const biometricChoice = localStorage.getItem('biometricChoice');
-    if (biometricChoice !== null) return false;
+    if (biometricChoice !== null) {
+      console.log('User already made biometric choice:', biometricChoice);
+      return false;
+    }
     
-    // Check if WebAuthn is supported
+    // Check if WebAuthn is supported (or simulate it for testing)
     const webauthnSupported = !!(window.PublicKeyCredential && typeof window.PublicKeyCredential === "function");
-    if (!webauthnSupported) return false;
+    if (!webauthnSupported) {
+      console.log('WebAuthn not supported, but showing popup anyway for testing');
+      // For testing purposes, show popup even without WebAuthn support
+    }
     
+    console.log('Showing biometric popup');
     return true;
   };
 
@@ -215,13 +251,7 @@ const AppInner: React.FC = () => {
     
     console.log('Google signup successful, tokens stored');
     
-    // Check if we should show biometric popup after successful Google signup
-    if (shouldShowBiometricPopup()) {
-      setShowBiometricPopup(true);
-      // Don't navigate immediately, let user handle biometric setup
-      return;
-    }
-    
+    // Navigate directly to main page - biometric popup will be handled after OTP verification
     navigate("/main");
   };
 
@@ -346,14 +376,17 @@ const AppInner: React.FC = () => {
       }
       
       if (!skipNavigation) {
-        // Check if we should show biometric popup after successful signup
-        if (shouldShowBiometricPopup()) {
-          setShowBiometricPopup(true);
-          // Don't navigate immediately, let user handle biometric setup
-          return;
+        // Check if this is a signup flow (no tempPassword means it's signup, not login)
+        if (!tempPassword) {
+          // This is a signup flow - check if we should show biometric popup
+          if (shouldShowBiometricPopup()) {
+            setShowBiometricPopup(true);
+            // Don't navigate immediately, let user handle biometric setup
+            return;
+          }
         }
         
-        // Small delay to ensure tokens are stored
+        // Navigate to main page
         setTimeout(() => {
           navigate("/main");
         }, 100);
@@ -388,7 +421,7 @@ const AppInner: React.FC = () => {
             <Route
               path="/"
               element={
-                <div style={{ width: "100%", overflowX: "hidden" }}>
+                <div style={{ width: "100%", overflowX: "hidden", overflowY: "visible" }}>
                   <div
                     style={{
                       minHeight: "90vh",
@@ -671,14 +704,37 @@ const AppInner: React.FC = () => {
 
 const App: React.FC = () => {
   const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID || "59629112789-huo85fv2fpcpba1jqqdic5vlq43m4p5n.apps.googleusercontent.com";
+  
+  // Global error handler for ResizeObserver
+  useEffect(() => {
+    // Apply ResizeObserver fixes
+    suppressResizeObserverErrors();
+    addResizeObserverCSSFix();
+    
+    const originalError = console.error;
+    console.error = (...args) => {
+      if (
+        typeof args[0] === 'string' && 
+        args[0].includes('ResizeObserver loop completed with undelivered notifications')
+      ) {
+        return; // Suppress ResizeObserver errors
+      }
+      originalError.apply(console, args);
+    };
+
+    return () => {
+      console.error = originalError;
+    };
+  }, []);
+  
   return (
     <LanguageProvider>
       <TimezoneProvider>
-        <GoogleOAuthProvider clientId={googleClientId}>
-          <Router>
-            <AppInner />
-          </Router>
-        </GoogleOAuthProvider>
+    <GoogleOAuthProvider clientId={googleClientId}>
+      <Router>
+        <AppInner />
+      </Router>
+    </GoogleOAuthProvider>
       </TimezoneProvider>
     </LanguageProvider>
   );

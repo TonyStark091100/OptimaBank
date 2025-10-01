@@ -72,6 +72,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
   const [rememberMe, setRememberMe] = useState(false);
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down("md"));
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

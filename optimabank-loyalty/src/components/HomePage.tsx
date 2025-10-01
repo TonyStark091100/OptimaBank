@@ -114,6 +114,7 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
   const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
   
   
   // Mobile-specific state
@@ -274,6 +275,9 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
         setUserProfile(profileData);
         setCart(cartData);
         setUserNotifications(notificationsData);
+        
+        // Debug: Log categories data
+        console.log('Categories loaded:', categoriesData);
 
         console.log('Data loaded successfully');
 
@@ -478,8 +482,8 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
       
       if (redemptionId) {
         try {
-          const filename = `${voucher.title.replace(/[^a-zA-Z0-9]/g, '_')}_voucher.pdf`;
-          await downloadPdfBlob(redemptionId, filename);
+        const filename = `${voucher.title.replace(/[^a-zA-Z0-9]/g, '_')}_voucher.pdf`;
+        await downloadPdfBlob(redemptionId, filename);
           setSnackbarMessage(`Successfully redeemed ${voucher.title}! PDF downloaded to your Downloads folder.`);
         } catch (pdfError) {
           console.error('PDF download error:', pdfError);
@@ -578,16 +582,16 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
       } else if (result.redemptions && result.redemptions.length > 0) {
         // Single voucher - download individual PDF
         const redemption = result.redemptions[0];
-        const filename = `${redemption.voucher_title.replace(/[^a-zA-Z0-9]/g, '_')}_voucher.pdf`;
-        const redemptionId = redemption.redemption_id || redemption.id;
-        
-        try {
-          await downloadPdfBlob(redemptionId, filename);
+          const filename = `${redemption.voucher_title.replace(/[^a-zA-Z0-9]/g, '_')}_voucher.pdf`;
+          const redemptionId = redemption.redemption_id || redemption.id;
+          
+            try {
+              await downloadPdfBlob(redemptionId, filename);
           setSnackbarMessage(`Successfully checked out cart! PDF downloaded to your Downloads folder.`);
-        } catch (error) {
-          console.error(`Failed to download PDF for ${redemption.voucher_title}:`, error);
+            } catch (error) {
+              console.error(`Failed to download PDF for ${redemption.voucher_title}:`, error);
           setSnackbarMessage('Cart checked out successfully, but PDF download failed. You can download it from your redemptions.');
-        }
+            }
       } else {
         setSnackbarMessage('Cart checked out successfully!');
       }
@@ -767,7 +771,7 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
         minHeight: '100vh',
         background: 'linear-gradient(135deg, #0A0A14 0%, #1A102E 100%)',
         color: 'white',
-        overflow: 'hidden',
+        overflow: isSmallScreen ? 'visible' : 'hidden',
         fontFamily: '"Inter", "Roboto", sans-serif'
       }}
     >
@@ -798,6 +802,11 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                 height: isSmallScreen ? 32 : 40, 
                 mr: 2, 
                 objectFit: 'contain',
+                bgcolor: 'rgba(162, 89, 255, 0.1)',
+                borderRadius: '8px',
+                padding: 0.5,
+                border: '1px solid rgba(162, 89, 255, 0.3)',
+                backdropFilter: 'blur(10px)'
               }} 
             />
             <Typography
@@ -833,7 +842,7 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                 </Typography>
                 <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.7rem' }}>
                   {timezoneInfo.city} • {timezoneInfo.offset}
-                </Typography>
+            </Typography>
               </Box>
             )}
           </Box>
@@ -860,16 +869,44 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                   </Typography>
                 </Box>
                 
-                <Box sx={{ display: 'flex', gap: 1 }}>
+                <Box sx={{ 
+                  display: 'flex', 
+                  gap: 0.5,
+                  flexWrap: 'nowrap',
+                  justifyContent: 'flex-start',
+                  alignItems: 'center',
+                  overflowX: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none',
+                  marginLeft: -1,
+                  paddingLeft: 1,
+                  '&::-webkit-scrollbar': { 
+                    display: 'none'
+                  }
+                }}>
+                  {/* Spending Insights */}
+                  <SpendingInsights size="small" />
+                  
+                  {/* Timezone Selector */}
+                  <TimezoneSelector 
+                    variant="icon" 
+                    size="small" 
+                    onTimezoneChange={setCurrentTimezone}
+                  />
+                  
+                  {/* Mini Games */}
                   <IconButton 
-                    onClick={handleCartMenuOpen}
+                    onClick={() => setMiniGamesOpen(true)}
                     sx={{
                       color: '#FFFFFF',
                       bgcolor: 'rgba(162, 89, 255, 0.15)',
                       border: '2px solid rgba(162, 89, 255, 0.4)',
                       borderRadius: '12px',
-                      width: 40,
-                      height: 40,
+                      width: 32,
+                      height: 32,
+                      minWidth: 32,
+                      minHeight: 32,
                       backdropFilter: 'blur(10px)',
                       boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
                       '&:hover': {
@@ -880,7 +917,67 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                       },
                       transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                       '& .MuiSvgIcon-root': {
-                        fontSize: '1.2rem',
+                        fontSize: '1rem',
+                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                      }
+                    }}
+                  >
+                    <GameControllerIcon />
+                  </IconButton>
+                  
+                  {/* Leaderboard */}
+                  <IconButton 
+                    onClick={() => setLeaderboardOpen(true)}
+                    sx={{
+                      color: '#FFFFFF',
+                      bgcolor: 'rgba(162, 89, 255, 0.15)',
+                      border: '2px solid rgba(162, 89, 255, 0.4)',
+                      borderRadius: '12px',
+                      width: 32,
+                      height: 32,
+                      minWidth: 32,
+                      minHeight: 32,
+                      backdropFilter: 'blur(10px)',
+                      boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
+                      '&:hover': {
+                        bgcolor: 'rgba(162, 89, 255, 0.25)',
+                        border: '2px solid rgba(162, 89, 255, 0.6)',
+                        transform: 'scale(1.08) translateY(-2px)',
+                        boxShadow: '0 8px 30px rgba(162, 89, 255, 0.4)'
+                      },
+                      transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                      '& .MuiSvgIcon-root': {
+                        fontSize: '1rem',
+                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                      }
+                    }}
+                  >
+                    <EmojiEvents />
+                  </IconButton>
+                  
+                  {/* Cart */}
+                  <IconButton 
+                    onClick={handleCartMenuOpen}
+                    sx={{
+                      color: '#FFFFFF',
+                      bgcolor: 'rgba(162, 89, 255, 0.15)',
+                      border: '2px solid rgba(162, 89, 255, 0.4)',
+                      borderRadius: '12px',
+                      width: 32,
+                      height: 32,
+                      minWidth: 32,
+                      minHeight: 32,
+                      backdropFilter: 'blur(10px)',
+                      boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
+                      '&:hover': {
+                        bgcolor: 'rgba(162, 89, 255, 0.25)',
+                        border: '2px solid rgba(162, 89, 255, 0.6)',
+                        transform: 'scale(1.08) translateY(-2px)',
+                        boxShadow: '0 8px 30px rgba(162, 89, 255, 0.4)'
+                      },
+                      transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                      '& .MuiSvgIcon-root': {
+                        fontSize: '1rem',
                         filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
                       }
                     }}
@@ -889,6 +986,8 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                       <ShoppingCartIcon />
                     </Badge>
                   </IconButton>
+                  
+                  {/* Notifications */}
                   <IconButton 
                     onClick={handleNotificationsMenuOpen}
                     sx={{
@@ -896,8 +995,10 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                       bgcolor: 'rgba(162, 89, 255, 0.15)',
                       border: '2px solid rgba(162, 89, 255, 0.4)',
                       borderRadius: '12px',
-                      width: 40,
-                      height: 40,
+                      width: 32,
+                      height: 32,
+                      minWidth: 32,
+                      minHeight: 32,
                       backdropFilter: 'blur(10px)',
                       boxShadow: '0 4px 20px rgba(162, 89, 255, 0.3)',
                       '&:hover': {
@@ -908,7 +1009,7 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                       },
                       transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                       '& .MuiSvgIcon-root': {
-                        fontSize: '1.2rem',
+                        fontSize: '1rem',
                         filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
                       }
                     }}
@@ -917,18 +1018,30 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                       <NotificationsIcon />
                     </Badge>
                   </IconButton>
+                  
+                  {/* Profile */}
                   <IconButton 
-                    sx={{ color: '#A259FF' }} 
+                    sx={{ 
+                      color: '#A259FF',
+                      width: 30,
+                      height: 30,
+                      minWidth: 30,
+                      minHeight: 30,
+                      marginLeft: -0.5,
+                      marginRight: 0.5
+                    }} 
                     onClick={handleProfileMenuOpen}
                     size="small"
                   >
                     <Avatar sx={{ 
-                      width: 28, 
-                      height: 28, 
+                      width: 24, 
+                      height: 24, 
+                      minWidth: 24,
+                      minHeight: 24,
                       bgcolor: 'rgba(162, 89, 255, 0.8)',
                       border: '1px solid rgba(255, 255, 255, 0.2)'
                     }} src="https://via.placeholder.com/40">
-                      <AccountCircleIcon />
+                      <AccountCircleIcon sx={{ fontSize: '0.9rem' }} />
                     </Avatar>
                   </IconButton>
                 </Box>
@@ -1408,14 +1521,20 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
         maxWidth="xl" 
         sx={{ 
           py: isSmallMobile ? 2 : 4,
-          px: isSmallMobile ? 1 : 2
+          px: isSmallMobile ? 1 : 2,
+          overflow: isSmallScreen ? 'visible' : 'auto',
+          // Ensure content is fully scrollable on mobile
+          ...(isSmallScreen && {
+            minHeight: '100vh',
+            paddingBottom: '200px' // Extra space at bottom for mobile
+          })
         }}
       >
         {/* Tier Progress Component */}
         <TierProgress 
           onTierUpgrade={(newTier) => {
-            setSnackbarMessage(`🎉 Congratulations! You've been upgraded to ${newTier.tier_name.charAt(0).toUpperCase() + newTier.tier_name.slice(1)} tier!`);
-            setSnackbarOpen(true);
+          setSnackbarMessage(`🎉 Congratulations! You've been upgraded to ${newTier.tier_name.charAt(0).toUpperCase() + newTier.tier_name.slice(1)} tier!`);
+          setSnackbarOpen(true);
           }}
           onShowSnackbar={onShowSnackbar}
         />
@@ -1428,24 +1547,24 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
           onTouchStart={handleSwipeStart}
           onTouchEnd={handleSwipeEnd}
           sx={{ 
-            position: 'relative', 
-            height: isSmallScreen ? 300 : 400, 
-            mb: 4, 
-            borderRadius: 3, 
-            overflow: 'hidden', 
-            backgroundImage: currentBannerVoucher ? `linear-gradient(rgba(10, 10, 20, 0.7), rgba(10, 10, 20, 0.7)), url(${currentBannerVoucher.image_url})` : 'none',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px solid rgba(162, 89, 255, 0.4)',
+          position: 'relative', 
+          height: isSmallScreen ? 300 : 400, 
+          mb: 4, 
+          borderRadius: 3, 
+          overflow: 'hidden', 
+          backgroundImage: currentBannerVoucher ? `linear-gradient(rgba(10, 10, 20, 0.7), rgba(10, 10, 20, 0.7)), url(${currentBannerVoucher.image_url})` : 'none',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: '1px solid rgba(162, 89, 255, 0.4)',
             backdropFilter: 'blur(5px)',
             cursor: isSmallScreen ? 'grab' : 'default',
             '&:active': {
               cursor: isSmallScreen ? 'grabbing' : 'default',
             }
-          }}>
+        }}>
           {/* Navigation Arrows - Hidden on mobile */}
           {!isSmallScreen && (
             <>
@@ -1587,18 +1706,42 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
           </Typography>
         </Box>
 
-        {/* Personalized Recommendations Section */}
+        {/* Smart Tips - Personalized Recommendations Section */}
         {showPersonalized && userProfile && (
-          <Box sx={{ mb: 4 }}>
+          <Box sx={{ 
+            mb: isSmallScreen ? 2 : 4,
+            width: '100%',
+            overflow: 'visible',
+            position: 'relative',
+            zIndex: 100,
+            // Ensure full visibility on mobile
+            ...(isSmallScreen && {
+              marginBottom: '20px',
+              paddingBottom: '20px',
+              minHeight: 'auto',
+              height: 'auto'
+            })
+          }}>
             <Paper sx={{ 
               bgcolor: 'rgba(20, 20, 30, 0.7)', 
-              p: 3, 
+              p: isSmallScreen ? 4 : 3, 
               borderRadius: 3,
               border: '1px solid rgba(162, 89, 255, 0.3)',
               backdropFilter: 'blur(10px)',
               background: 'linear-gradient(135deg, rgba(162, 89, 255, 0.1) 0%, rgba(20, 20, 30, 0.7) 100%)',
               ...animationPresets.pageEnter,
-              ...microInteractions.hoverLift
+              ...microInteractions.hoverLift,
+              width: '100%',
+              minHeight: 'auto',
+              // Mobile-specific styling
+              ...(isSmallScreen && {
+                marginBottom: '10px',
+                paddingBottom: '10px',
+                position: 'relative',
+                zIndex: 100,
+                overflow: 'visible',
+                height: 'auto'
+              })
             }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1630,7 +1773,16 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
               <Box sx={{
                 display: 'grid',
                 gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
-                gap: 2
+                gap: isSmallScreen ? 4 : 2,
+                width: '100%',
+                overflow: 'visible',
+                // Mobile-specific styling
+                ...(isSmallScreen && {
+                  marginBottom: '40px',
+                  paddingBottom: '40px',
+                  minHeight: 'auto',
+                  height: 'auto'
+                })
               }}>
                 {generatePersonalizedRecommendations().map((voucher, index) => (
                   <Card 
@@ -1759,6 +1911,7 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
         <Paper sx={{ 
           p: isSmallScreen ? 1 : 2, 
           mb: 3, 
+          mt: isSmallScreen ? 1 : 0,
           bgcolor: 'rgba(20, 20, 30, 0.7)', 
           border: '1px solid rgba(162, 89, 255, 0.3)', 
           borderRadius: 2,
@@ -1768,16 +1921,32 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
             value={activeCategory}
             onChange={(e, newValue) => setActiveCategory(newValue)}
             variant="scrollable"
-            scrollButtons="auto"
+            scrollButtons={isSmallScreen ? true : "auto"}
             sx={{
               '& .MuiTab-root': { 
                 color: 'rgba(255, 255, 255, 0.7)',
                 minHeight: isSmallScreen ? 48 : 60,
                 fontSize: isSmallScreen ? '0.8rem' : '1rem',
                 px: isSmallScreen ? 1 : 2,
+                minWidth: isSmallScreen ? 'auto' : 'auto',
+                flexShrink: 0,
                 '&.Mui-selected': { color: '#A259FF' }
               },
-              '& .MuiTabs-indicator': { backgroundColor: '#A259FF' }
+              '& .MuiTabs-indicator': { backgroundColor: '#A259FF' },
+              // Make scroll buttons visible for mobile
+              ...(isSmallScreen && {
+                '& .MuiTabs-scrollButtons': {
+                  color: '#A259FF',
+                  width: 32,
+                  height: 32,
+                  display: 'flex !important',
+                  visibility: 'visible !important',
+                  opacity: 1,
+                  '&.Mui-disabled': {
+                    color: 'rgba(255, 255, 255, 0.3)'
+                  }
+                }
+              })
             }}
           >
             {/* All Vouchers tab */}
@@ -1793,7 +1962,14 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                 }
               }}
             />
-            {voucherCategories.map(category => (
+            {(voucherCategories.length > 0 ? voucherCategories : [
+              { name: 'Dining' },
+              { name: 'Shopping' },
+              { name: 'Entertainment' },
+              { name: 'Travel' },
+              { name: 'Health' },
+              { name: 'Fashion' }
+            ]).map(category => (
               <Tab 
                 key={category.name} 
                 label={isSmallScreen ? category.name.split(' ')[0] : category.name} 
@@ -1984,7 +2160,12 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                     </Box>
                   </Box>
                   
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
+                  <Box sx={{ 
+                    display: 'flex', 
+                    flexDirection: isMobile ? 'column' : 'row',
+                    justifyContent: 'space-between', 
+                    gap: 1 
+                  }}>
                     <Button
                       variant="outlined"
                       fullWidth
@@ -1993,6 +2174,8 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                         color: '#A259FF',
                         borderColor: '#A259FF',
                         '&:hover': { borderColor: '#8a3ffb', backgroundColor: 'rgba(162, 89, 255, 0.1)' },
+                        fontSize: isMobile ? '0.9rem' : '1rem',
+                        py: isMobile ? 1.5 : 1
                       }}
                     >
                       View Terms
@@ -2004,6 +2187,8 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                       sx={{
                         background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
                         '&:hover': { background: 'linear-gradient(45deg, #9147e6 30%, #7a36d9 90%)' },
+                        fontSize: isMobile ? '0.9rem' : '1rem',
+                        py: isMobile ? 1.5 : 1
                       }}
                     >
                       Add to Cart
@@ -2012,15 +2197,19 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
                   
                   <Button
                     fullWidth
-                    variant="text"
+                    variant={isMobile ? "outlined" : "text"}
                     onClick={() => handleRedeemNow(voucher)}
                     disabled={userPoints < voucher.points}
                     sx={{
                       mt: 1,
                       color: userPoints >= voucher.points ? '#A259FF' : 'rgba(255, 255, 255, 0.3)',
+                      borderColor: isMobile && userPoints >= voucher.points ? '#A259FF' : 'transparent',
                       '&:hover': { 
-                        backgroundColor: userPoints >= voucher.points ? 'rgba(162, 89, 255, 0.1)' : 'transparent' 
+                        backgroundColor: userPoints >= voucher.points ? 'rgba(162, 89, 255, 0.1)' : 'transparent',
+                        borderColor: isMobile && userPoints >= voucher.points ? '#8a3ffb' : 'transparent'
                       },
+                      fontSize: isMobile ? '0.9rem' : '1rem',
+                      py: isMobile ? 1.5 : 1
                     }}
                   >
                     {userPoints >= voucher.points ? 'Redeem Now' : 'Not Enough Points'}
@@ -2162,60 +2351,6 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
         </Alert>
       </Snackbar>
 
-      {/* Mobile Floating Action Button */}
-      {isSmallScreen && (
-        <Box
-          sx={{
-            position: 'fixed',
-            bottom: 20,
-            right: 20,
-            zIndex: 1000,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 1
-          }}
-        >
-          {/* Quick Cart Access */}
-          <IconButton
-            onClick={() => setCartAnchorEl(document.body)}
-            sx={{
-              bgcolor: '#A259FF',
-              color: 'white',
-              width: 56,
-              height: 56,
-              boxShadow: '0 4px 20px rgba(162, 89, 255, 0.4)',
-              '&:hover': {
-                bgcolor: '#8B4FE6',
-                transform: 'scale(1.1)',
-              },
-              transition: 'all 0.2s ease-in-out'
-            }}
-          >
-            <Badge badgeContent={totalCartItems} color="error">
-              <ShoppingCartIcon />
-            </Badge>
-          </IconButton>
-
-          {/* Quick Profile Access */}
-          <IconButton
-            onClick={() => setAnchorEl(document.body)}
-            sx={{
-              bgcolor: 'rgba(20, 20, 30, 0.9)',
-              color: 'white',
-              width: 48,
-              height: 48,
-              border: '1px solid rgba(162, 89, 255, 0.3)',
-              '&:hover': {
-                bgcolor: 'rgba(162, 89, 255, 0.2)',
-                transform: 'scale(1.05)',
-              },
-              transition: 'all 0.2s ease-in-out'
-            }}
-          >
-            <PersonIcon />
-          </IconButton>
-        </Box>
-      )}
 
       {/* Mini-Games Dialog */}
       <MiniGames

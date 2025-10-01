@@ -182,20 +182,49 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
           </Typography>
         </Box>
       </DialogTitle>
-      <DialogContent sx={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', p: 0 }}>
+      <DialogContent sx={{ 
+        overflow: isSmallScreen ? 'auto' : 'hidden', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        p: 0,
+        // Premium scroll styling for mobile
+        ...(isSmallScreen && {
+          '&::-webkit-scrollbar': {
+            width: 8,
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'rgba(20, 20, 30, 0.3)',
+            borderRadius: 4,
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
+            borderRadius: 4,
+            '&:hover': {
+              background: 'linear-gradient(45deg, #8a3ffb 30%, #A259FF 90%)',
+            }
+          },
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#A259FF rgba(20, 20, 30, 0.3)',
+        })
+      }}>
         <Box
           sx={{
             background: '#0A0A14',
             color: 'white',
             fontFamily: '"Inter", "Roboto", sans-serif',
             height: '100%',
-            overflow: 'hidden',
+            overflow: isSmallScreen ? 'visible' : 'hidden',
             display: 'flex',
             flexDirection: 'column'
           }}
         >
           {/* Main Content */}
-          <Box sx={{ flex: 1, overflow: 'hidden', p: 2 }}>
+          <Box sx={{ 
+            flex: 1, 
+            overflow: isSmallScreen ? 'visible' : 'hidden', 
+            p: 2,
+            minHeight: isSmallScreen ? 'auto' : '100%'
+          }}>
             <Paper
               sx={{
                 p: 3,
@@ -204,10 +233,11 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
                 borderRadius: 3,
                 backdropFilter: 'blur(10px)',
                 boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-                height: '100%',
-                overflow: 'hidden',
+                height: isSmallScreen ? 'auto' : '100%',
+                overflow: isSmallScreen ? 'visible' : 'hidden',
                 display: 'flex',
-                flexDirection: 'column'
+                flexDirection: 'column',
+                minHeight: isSmallScreen ? 'auto' : '100%'
               }}
             >
           <Typography
@@ -245,10 +275,11 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
             component="form" 
             sx={{ 
               mt: 2, 
-              flex: 1, 
+              flex: isSmallScreen ? 'none' : 1, 
               display: 'flex',
               flexDirection: 'column',
-              overflow: 'hidden'
+              overflow: isSmallScreen ? 'visible' : 'hidden',
+              minHeight: isSmallScreen ? 'auto' : '100%'
             }}
           >
             <Box sx={{ 
