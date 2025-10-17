@@ -173,42 +173,29 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
     }
   };
 
-  // Predictive Analysis Functions
+  // Predictive Analysis Functions (use available fields from TierProgressData)
   const calculatePredictions = () => {
     console.log('Calculating predictions with:', { tierData, allTiers });
-    
-    if (!tierData || !allTiers.length) {
-      console.log('Missing data:', { tierData: !!tierData, allTiersLength: allTiers.length });
-      return null;
-    }
+    if (!tierData) return null;
 
     const currentTier = tierData.current_tier;
-    const currentPoints = (tierData as any).current_points || 0;
-    const nextTier = allTiers.find(tier => (tier as any).points_required > currentPoints);
-    
-    console.log('Tier analysis:', { currentTier, currentPoints, nextTier });
-    
-    if (!nextTier) {
-      console.log('No next tier found');
-      return null;
-    }
+    const nextTier = tierData.next_tier || null;
+    const pointsNeeded = tierData.points_to_next_tier ?? 0;
 
-    const pointsNeeded = (nextTier as any).points_required - currentPoints;
-    
-    // Calculate daily point earning rate (mock data - in real app, analyze user history)
-    const dailyEarningRate = 150; // Average points per day
-    const daysToNextTier = Math.ceil(pointsNeeded / dailyEarningRate);
-    
-    // Calculate risk of losing current tier (if applicable)
-    const tierMaintenanceThreshold = (currentTier as any).points_required * 0.8; // 80% of tier requirement
-    const isAtRisk = currentPoints < tierMaintenanceThreshold;
-    const pointsToMaintain = Math.max(0, tierMaintenanceThreshold - currentPoints);
-    
-    // Generate recommendations
-    const recommendations = generateRecommendations(pointsNeeded, daysToNextTier, isAtRisk, pointsToMaintain);
-    
+    // Daily earning rate assumption (could be enhanced via recent TierActivity)
+    const dailyEarningRate = 150; // points/day baseline
+    const daysToNextTier = pointsNeeded > 0 ? Math.ceil(pointsNeeded / dailyEarningRate) : 0;
+
+    // Risk estimation based on progress within current tier (fallback heuristic)
+    // If progress < 20%, consider at risk of stagnation; maintenance points suggest target to hit 20% baseline
+    const progress = tierData.progress_percentage ?? 0;
+    const isAtRisk = progress < 20;
+    const pointsToMaintain = isAtRisk ? Math.ceil((20 - progress) / 100 * (pointsNeeded + 1) * 5) : 0;
+
+    const recommendations = generateRecommendations(pointsNeeded, daysToNextTier, isAtRisk, pointsToMaintain, !!nextTier);
+
     const result = {
-      nextTier,
+      nextTier: nextTier || currentTier,
       pointsNeeded,
       daysToNextTier,
       isAtRisk,
@@ -216,16 +203,15 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
       recommendations,
       currentTier
     };
-    
     console.log('Generated predictions:', result);
     return result;
   };
 
-  const generateRecommendations = (pointsNeeded: number, daysToNextTier: number, isAtRisk: boolean, pointsToMaintain: number) => {
+  const generateRecommendations = (pointsNeeded: number, daysToNextTier: number, isAtRisk: boolean, pointsToMaintain: number, hasNextTier: boolean = true) => {
     const recommendations = [];
 
     // Quick win recommendations
-    if (pointsNeeded <= 500) {
+    if (hasNextTier && pointsNeeded > 0 && pointsNeeded <= 500) {
       recommendations.push({
         type: 'quick_win',
         title: 'Almost There!',
@@ -262,7 +248,7 @@ const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackb
     }
 
     // Time-based predictions
-    if (daysToNextTier <= 30) {
+    if (hasNextTier && daysToNextTier > 0 && daysToNextTier <= 30) {
       recommendations.push({
         type: 'time_prediction',
         title: 'Tier Upgrade Timeline',
