@@ -44,7 +44,8 @@ import {
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon
 } from '@mui/icons-material';
-import { userApi, UserProfile } from '../services/api';
+import { userApi, UserProfile, leaderboardApi } from '../services/api';
+import { applyTheme } from '../utils/theme';
 
 interface SettingsPageProps {
   onBack?: () => void;
@@ -141,12 +142,22 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
       ...prev,
       [setting]: value
     }));
+    // Apply theme immediately when changed
+    if (setting === 'theme') {
+      applyTheme(value as any);
+    }
   };
 
   const handleSaveSettings = async () => {
     try {
-      // In a real app, you'd save these to the backend
+      // Persist locally
       localStorage.setItem('userSettings', JSON.stringify(settings));
+      // Update leaderboard privacy based on profileVisibility
+      try {
+        await leaderboardApi.updatePrivacy(settings.profileVisibility === 'public');
+      } catch (e) {
+        console.warn('Privacy update failed:', e);
+      }
       showSnackbar('Settings saved successfully!', 'success');
     } catch (error) {
       showSnackbar('Failed to save settings', 'error');
@@ -165,24 +176,37 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   };
 
   const handleChangePassword = async () => {
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      showSnackbar('New passwords do not match', 'error');
-      return;
-    }
-    
+    // Send reset link to user's email
     try {
-      // In a real app, you'd change password via API
-      showSnackbar('Password changed successfully!', 'success');
+      const email = profileData.email;
+      if (!email) {
+        showSnackbar('No email found on profile', 'error');
+        return;
+      }
+      await userApi.requestPasswordReset(email);
+      showSnackbar('Password reset link sent to your email', 'success');
       setChangePassword(false);
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (error) {
-      showSnackbar('Failed to change password', 'error');
+    } catch (error: any) {
+      showSnackbar(error.message || 'Failed to send password reset link', 'error');
     }
   };
 
-  const handleDeleteAccount = () => {
-    // In a real app, you'd implement account deletion
-    showSnackbar('Account deletion feature coming soon', 'error');
+  const handleDeleteAccount = async () => {
+    const confirmDelete = window.confirm('Are you sure you want to permanently delete your account? This cannot be undone.');
+    if (!confirmDelete) return;
+    try {
+      await userApi.deleteAccount();
+      // Clear auth and redirect
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('userName');
+      localStorage.removeItem('userEmail');
+      showSnackbar('Account deleted successfully', 'success');
+      navigate('/login');
+    } catch (e: any) {
+      showSnackbar(e.message || 'Failed to delete account', 'error');
+    }
   };
 
   const handleBack = () => {

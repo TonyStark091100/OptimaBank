@@ -22,6 +22,7 @@ import {
   Timer as TimerIcon
 } from '@mui/icons-material';
 import { useTimezone } from '../contexts/TimezoneContext';
+import { promotionsApi, ActivePromotion } from '../services/api';
 
 interface TimezonePromotionsProps {
   variant?: 'compact' | 'expanded';
@@ -35,6 +36,37 @@ const TimezonePromotions: React.FC<TimezonePromotionsProps> = ({ variant = 'comp
     getNextPromotion,
     getTimeUntilNextPromotion
   } = useTimezone();
+  const [backendPromotion, setBackendPromotion] = React.useState<ActivePromotion | null>(null);
+  const [endsIn, setEndsIn] = React.useState<number | null>(null);
+
+  // Poll backend active promotion every 30s
+  React.useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const promo = await promotionsApi.getActive();
+        if (mounted) {
+          setBackendPromotion(promo);
+          setEndsIn(promo?.active ? (promo.ends_in_seconds ?? null) : null);
+        }
+      } catch (e) {
+        // ignore fetch errors and keep UI graceful
+      }
+    };
+    load();
+    const interval = setInterval(load, 30000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Local countdown tick per second when active
+  React.useEffect(() => {
+    if (!backendPromotion?.active || endsIn == null) return;
+    const tick = setInterval(() => setEndsIn((s) => (s == null || s <= 0 ? 0 : s - 1)), 1000);
+    return () => clearInterval(tick);
+  }, [backendPromotion?.active, endsIn]);
   
   const [expanded, setExpanded] = React.useState(false);
   const currentPromotions = getCurrentPromotions();
@@ -105,7 +137,18 @@ const TimezonePromotions: React.FC<TimezonePromotionsProps> = ({ variant = 'comp
             </IconButton>
           </Box>
 
-          {currentPromotions.length > 0 ? (
+          {backendPromotion?.active ? (
+            <Box>
+              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)', mb: 1 }}>
+                Active now: {backendPromotion.name} • {backendPromotion.discount_percentage}% OFF
+              </Typography>
+              {typeof endsIn === 'number' && (
+                <Typography variant="caption" sx={{ color: '#FFD700' }}>
+                  Ends in {Math.max(0, Math.floor(endsIn / 60))}m {Math.max(0, endsIn % 60)}s
+                </Typography>
+              )}
+            </Box>
+          ) : currentPromotions.length > 0 ? (
             <Box>
               <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)', mb: 1 }}>
                 {currentPromotions.length} active promotion{currentPromotions.length > 1 ? 's' : ''} in your timezone
@@ -216,7 +259,56 @@ const TimezonePromotions: React.FC<TimezonePromotionsProps> = ({ variant = 'comp
         </Box>
 
         {/* Active Promotions */}
-        {currentPromotions.length > 0 ? (
+        {backendPromotion?.active ? (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h6" sx={{ color: 'white', mb: 2 }}>
+              🎉 Active Promotion
+            </Typography>
+            <Card sx={{ 
+              mb: 2, 
+              backgroundColor: 'rgba(255, 107, 107, 0.1)',
+              border: '1px solid rgba(255, 107, 107, 0.3)'
+            }}>
+              <ListItem>
+                <ListItemIcon>
+                  <Typography sx={{ fontSize: '1.5rem' }}>🎯</Typography>
+                </ListItemIcon>
+                <ListItemText
+                  primary={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Typography variant="h6" sx={{ color: 'white', fontWeight: 600 }}>
+                        {backendPromotion.name}
+                      </Typography>
+                      {backendPromotion.discount_percentage != null && (
+                        <Chip 
+                          label={`${backendPromotion.discount_percentage}% OFF`} 
+                          sx={{ backgroundColor: '#FFA726', color: 'white', fontWeight: 'bold' }} 
+                        />
+                      )}
+                    </Box>
+                  }
+                  secondary={
+                    <Box>
+                      {backendPromotion.description && (
+                        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)', mb: 1 }}>
+                          {backendPromotion.description}
+                        </Typography>
+                      )}
+                      {typeof endsIn === 'number' && (
+                        <Chip 
+                          icon={<ScheduleIcon />}
+                          label={`Ends in ${Math.max(0, Math.floor(endsIn / 60))}m ${Math.max(0, endsIn % 60)}s`} 
+                          size="small" 
+                          sx={{ backgroundColor: 'rgba(162, 89, 255, 0.2)', color: '#A259FF' }} 
+                        />
+                      )}
+                    </Box>
+                  }
+                />
+              </ListItem>
+            </Card>
+          </Box>
+        ) : currentPromotions.length > 0 ? (
           <Box sx={{ mb: 3 }}>
             <Typography variant="h6" sx={{ color: 'white', mb: 2 }}>
               🎉 Active Promotions ({currentPromotions.length})

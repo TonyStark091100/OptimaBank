@@ -7,7 +7,7 @@ JWT tokens, OTP verification, and user profile management.
 
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from users import views
+from . import views
 
 urlpatterns = [
     # Google OAuth
@@ -20,7 +20,12 @@ urlpatterns = [
     path("request-otp/", views.request_otp, name="request_otp"),
 
     # Verify OTP
-    path("verify-otp/", views.verify_otp, name="verify_otp"),
+    path('verify-otp/', views.verify_otp, name='verify_otp'),
+
+    # Account management
+    path('delete-account/', views.delete_account, name='delete_account'),
+    path('password-reset/request/', views.password_reset_request, name='password_reset_request'),
+    path('password-reset/confirm/', views.password_reset_confirm, name='password_reset_confirm'),
 
     # JWT login & refresh
     path("login/", TokenObtainPairView.as_view(), name="jwt_login"),

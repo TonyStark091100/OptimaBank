@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   IconButton,
   Menu,
@@ -20,6 +20,7 @@ import {
 } from '@mui/icons-material';
 import { getUserTimezone } from '../utils/timezone';
 import { useTimezone } from '../contexts/TimezoneContext';
+import { promotionsApi, ActivePromotion } from '../services/api';
 
 interface TimezoneSelectorProps {
   variant?: 'icon' | 'button' | 'chip';
@@ -40,9 +41,66 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
     getCurrentPromotions
   } = useTimezone();
   const open = Boolean(anchorEl);
+  const [promoByTz, setPromoByTz] = useState<Record<string, ActivePromotion>>({});
+  const [countdowns, setCountdowns] = useState<Record<string, number>>({});
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
+  };
+
+  // Compute next fallback Happy Hour for a timezone (Mon–Fri, 17:00 local)
+  const getNextHappyHourLocal = (timezone: string): { label: string; minutesUntil: number } => {
+    const now = new Date();
+    // Current local date/time in target tz
+    const localNow = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+    const localDay = localNow.getDay(); // 0=Sun..6=Sat
+    const localHour = localNow.getHours();
+    const localMinute = localNow.getMinutes();
+
+    // Helper to build a date at local 17:00 same timezone representation
+    const buildLocal = (base: Date, addDays: number): Date => {
+      const d = new Date(base);
+      d.setDate(d.getDate() + addDays);
+      d.setHours(17, 0, 0, 0);
+      return d;
+    };
+
+    // Determine if today is weekday (Mon=1..Fri=5)
+    const isWeekday = (d: number) => d >= 1 && d <= 5;
+
+    let target: Date;
+    if (isWeekday(localDay) && (localHour < 17 || (localHour === 17 && localMinute === 0))) {
+      // Today at 17:00
+      target = buildLocal(localNow, 0);
+    } else {
+      // Find next weekday
+      let add = 1;
+      while (true) {
+        const day = new Date(localNow.getTime());
+        day.setDate(day.getDate() + add);
+        const d = day.getDay();
+        if (isWeekday(d)) {
+          target = buildLocal(localNow, add);
+          break;
+        }
+        add += 1;
+      }
+    }
+
+    // Convert both local times to epoch by formatting in that timezone and parsing
+    const targetMs = new Date(target.toLocaleString('en-US', { timeZone: timezone })).getTime();
+    const nowMs = localNow.getTime();
+    const diffMin = Math.max(0, Math.round((targetMs - nowMs) / 60000));
+
+    const dayLabel = (() => {
+      const dayDiff = Math.round((targetMs - nowMs) / (24 * 60 * 60000));
+      if (diffMin < 24 * 60 && new Date(localNow).getDate() === new Date(target).getDate()) return 'today';
+      if (dayDiff === 1 || (diffMin < 48 * 60 && new Date(localNow).getDate() + 1 === new Date(target).getDate())) return 'tomorrow';
+      return new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: timezone }).format(target);
+    })();
+
+    const timeLabel = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone }).format(target);
+    return { label: `${dayLabel} ${timeLabel}`, minutesUntil: diffMin };
   };
 
   const handleClose = () => {
@@ -55,12 +113,67 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
     handleClose();
   };
 
+  // Load real-time promotion status for all listed timezones when menu opens
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const loadAll = async () => {
+      try {
+        const results = await Promise.allSettled(
+          timezones.map(tz => promotionsApi.getActiveForTz(tz.timezone))
+        );
+        const map: Record<string, ActivePromotion> = {};
+        results.forEach((res, idx) => {
+          const tz = timezones[idx].timezone;
+          if (res.status === 'fulfilled') {
+            map[tz] = res.value;
+          } else {
+            map[tz] = { active: false };
+          }
+        });
+        if (!cancelled) setPromoByTz(map);
+        // Initialize countdowns
+        const cd: Record<string, number> = {};
+        Object.entries(map).forEach(([tz, ap]) => {
+          if (ap.active && typeof ap.ends_in_seconds === 'number') {
+            cd[tz] = ap.ends_in_seconds;
+          }
+        });
+        if (!cancelled) setCountdowns(cd);
+      } catch (_) {}
+    };
+    loadAll();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Tick countdowns every second while menu is open
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(() => {
+      setCountdowns(prev => {
+        const next: Record<string, number> = {};
+        Object.entries(prev).forEach(([k, v]) => {
+          next[k] = v > 0 ? v - 1 : 0;
+        });
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [open]);
+
   const currentTimezone = timezones.find(tz => tz.timezone === selectedTimezone) || 
     timezones.find(tz => tz.timezone === getUserTimezone()) ||
     timezones[0];
 
   // Helper functions for timezone-specific features
   const getTimezonePromotions = (timezone: string) => {
+    // Prefer backend status if available for real-time accuracy
+    const ap = promoByTz[timezone];
+    if (ap && ap.active) {
+      return [{ id: 'backend-active', name: ap.name || 'Happy Hour', description: ap.description || '', discount: ap.discount_percentage || 0, startTime: '', endTime: '', days: [], timezones: [timezone], voucherCategories: [], isActive: true }];
+    }
+    // Fallback to context sample logic
     return getCurrentPromotions().filter(p => p.timezones.includes(timezone));
   };
 
@@ -203,6 +316,8 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
           
           {timezones.map((tz) => {
             const promotions = getTimezonePromotions(tz.timezone);
+            const ap = promoByTz[tz.timezone];
+            const secondsLeft = countdowns[tz.timezone];
             const businessStatus = getTimezoneBusinessStatus(tz.timezone);
             const nextPromotion = getNextPromotionForTimezone(tz.timezone);
             const hasPromotions = promotions.length > 0;
@@ -379,6 +494,8 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
         
         {timezones.map((tz) => {
           const promotions = getTimezonePromotions(tz.timezone);
+          const ap = promoByTz[tz.timezone];
+          const secondsLeft = countdowns[tz.timezone];
           const businessStatus = getTimezoneBusinessStatus(tz.timezone);
           const nextPromotion = getNextPromotionForTimezone(tz.timezone);
           const hasPromotions = promotions.length > 0;
@@ -437,7 +554,19 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
                           }} 
                         />
                       )}
-                      {hasPromotions && (
+                      {ap?.active && (
+                        <Chip 
+                          label={secondsLeft != null ? `Active HH • ${Math.max(0, Math.floor((secondsLeft||0)/60))}m ${Math.max(0, (secondsLeft||0)%60)}s` : 'Active HH'} 
+                          size="small" 
+                          sx={{ 
+                            backgroundColor: 'rgba(255, 215, 0, 0.2)', 
+                            color: '#FFD700',
+                            fontSize: '0.6rem',
+                            height: '18px'
+                          }} 
+                        />
+                      )}
+                      {!ap?.active && hasPromotions && (
                         <Chip 
                           label="Promo" 
                           size="small" 
@@ -449,15 +578,19 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
                           }} 
                         />
                       )}
+                      {/* Next Happy Hour shown as yellow text below, not as a chip */}
                     </Box>
                     <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
                       {tz.country} • {tz.offset}
                     </Typography>
-                    {nextPromotion && (
-                      <Typography variant="caption" sx={{ color: '#FFD700', display: 'block', mt: 0.5 }}>
-                        Next: {nextPromotion.name} at {nextPromotion.time}
-                      </Typography>
-                    )}
+                    {(() => {
+                      const next = getNextHappyHourLocal(tz.timezone);
+                      return (
+                        <Typography variant="caption" sx={{ color: '#FFD700', display: 'block', mt: 0.5 }}>
+                          Next: Happy Hour at {next.label}
+                        </Typography>
+                      );
+                    })()}
                   </Box>
                 }
                 secondary={

@@ -7,6 +7,7 @@ import { GoogleOAuthProvider, CredentialResponse } from "@react-oauth/google";
 import { authApi } from "./services/api";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { TimezoneProvider } from "./contexts/TimezoneContext";
+import { initTheme } from "./utils/theme";
 import { suppressResizeObserverErrors, addResizeObserverCSSFix } from "./utils/resizeObserverFix";
 
 import LoadingPage from "./components/LoadingPage";
@@ -15,6 +16,7 @@ import SignUpPage from "./components/SignUpPage";
 import LoginPage from "./components/LoginPage";
 import NewsletterPage from "./components/NewsletterSection";
 import MainPage from "./components/HomePage";
+import ResetPasswordPage from "./components/ResetPasswordPage";
 import HelpPage from "./components/HelpPage"; 
 import EditProfilePage from "./components/EditProfilePage";
 import BiometricSetupPopup from "./components/BiometricSetupPopup";
@@ -30,6 +32,8 @@ const AppInner: React.FC = () => {
 
   // Fix ResizeObserver loop error
   useEffect(() => {
+    // Initialize theme (Light/Dark/Auto)
+    initTheme();
     const handleResizeObserverError = (e: ErrorEvent) => {
       if (e.message === 'ResizeObserver loop completed with undelivered notifications.') {
         e.stopImmediatePropagation();
@@ -661,6 +665,9 @@ const AppInner: React.FC = () => {
 
             {/* Help Page */}
             <Route path="/help" element={<HelpPage />} />
+
+            {/* Password Reset */}
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* ✅ Edit Page */}
             <Route path="/edit" element={<EditProfilePage onShowSnackbar={showSnackbar} />} />

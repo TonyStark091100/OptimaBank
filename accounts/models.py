@@ -48,6 +48,34 @@ class Voucher(models.Model):
         """Return formatted discount percentage."""
         return f"{self.discount_percentage}% off"
 
+class Promotion(models.Model):
+    """A time-based promotion that applies a percentage discount to selected voucher categories."""
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    discount_percentage = models.IntegerField(default=20)
+    # Daily window (server local time, HH:MM)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    # Active on these days: 0=Monday ... 6=Sunday
+    active_days = models.CharField(
+        max_length=20,
+        default="0,1,2,3,4",  # weekdays by default
+        help_text="Comma-separated day indices where 0=Mon ... 6=Sun",
+    )
+    applicable_categories = models.ManyToManyField(VoucherCategory, related_name="promotions", blank=True)
+    is_enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return self.name
+
+    def active_day_indices(self):
+        try:
+            return [int(x) for x in self.active_days.split(',') if x != '']
+        except Exception:
+            return []
+
 class UserProfile(models.Model):
     """Model representing user profile with points."""
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -401,27 +429,3 @@ class LeaderboardEntry(models.Model):
     
     class Meta:
         ordering = ['-total_points', 'last_updated']
-        unique_together = ['user']
-    
-    def __str__(self) -> str:
-        return f"{self.user.email} - {self.total_points} points"
-    
-    @classmethod
-    def update_user_entry(cls, user):
-        """Update or create leaderboard entry for a user."""
-        try:
-            profile = UserProfile.objects.get(user=user)
-            entry, created = cls.objects.get_or_create(
-                user=user,
-                defaults={
-                    'total_points': profile.points,
-                    'tier_name': profile.tier,
-                    'is_public': True
-                }
-            )
-            if not created:
-                entry.total_points = profile.points
-                entry.tier_name = profile.tier
-                entry.save()
-        except UserProfile.DoesNotExist:
-            pass

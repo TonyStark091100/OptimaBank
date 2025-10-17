@@ -1,3 +1,88 @@
+# Voucher Views
+###########################
+from datetime import time  # ensure available for helpers below
+from zoneinfo import ZoneInfo
+import os
+
+# --- Promotion helpers ---
+def _get_active_promotion(tz_name: str | None = None):
+    """
+    Return the currently active Promotion instance if any, else None.
+    Fallback: weekday Happy Hour 17:00-19:00 with 30% for Dining/Restaurant if no Promotion objects exist.
+    """
+    promo_tz_name = tz_name or os.getenv("PROMO_TIMEZONE", "Asia/Singapore")
+    try:
+        tz = ZoneInfo(promo_tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+
+    # Evaluate current time in the configured promotion timezone
+    now = timezone.now().astimezone(tz)
+    weekday = now.weekday()  # Monday=0
+    now_t = now.time()
+
+    # Try DB-configured promotions
+    try:
+        promos = Promotion.objects.filter(is_enabled=True)
+        for promo in promos:
+            if weekday not in promo.active_day_indices():
+                continue
+            # Handle simple window (no overnight wrap)
+            if promo.start_time <= now_t <= promo.end_time:
+                return promo
+    except Exception:
+        pass
+
+    # Fallback built-in Happy Hour if no DB promo
+    # Weekdays 17:00-19:00, 30% off Dining/Restaurant
+    if weekday in [0, 1, 2, 3, 4] and time(17, 0) <= now_t <= time(19, 0):
+        class _FallbackPromo:
+            name = "Happy Hour"
+            description = "Limited-time evening deal"
+            discount_percentage = 30
+            start_time = time(17, 0)
+            end_time = time(19, 0)
+            def active_day_indices(self):
+                return [0,1,2,3,4]
+            def applicable_categories(self):
+                return []
+        return _FallbackPromo()
+    return None
+
+
+def _category_in_promo(voucher, promo) -> bool:
+    """Check if voucher.category is included in promo categories. For fallback, use name match."""
+    try:
+        # Real Promotion with M2M categories
+        if isinstance(promo, Promotion):
+            return promo.applicable_categories.filter(id=voucher.category_id).exists()
+    except Exception:
+        pass
+    # Fallback promo: match by common dining names
+    cat_name = (voucher.category.name or "").lower()
+    return cat_name in ("dining", "restaurant", "restaurants")
+
+
+def _effective_points(voucher, tz_name: str | None = None) -> tuple[int, dict]:
+    """Return (points_to_use, meta) with discount applied if promotion active for category."""
+    promo = _get_active_promotion(tz_name)
+    if not promo:
+        return voucher.points, {"promotion_active": False}
+    if not _category_in_promo(voucher, promo):
+        return voucher.points, {"promotion_active": False}
+    try:
+        discount_pct = int(getattr(promo, "discount_percentage", 0))
+    except Exception:
+        discount_pct = 0
+    if discount_pct <= 0:
+        return voucher.points, {"promotion_active": False}
+    discounted = max(0, round(voucher.points * (100 - discount_pct) / 100))
+    return int(discounted), {
+        "promotion_active": True,
+        "promotion_name": getattr(promo, "name", "Promotion"),
+        "discount_percentage": discount_pct,
+        "original_points": voucher.points,
+    }
 """
 Accounts views for voucher management, cart operations, and redemptions.
 """
@@ -31,9 +116,18 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from users.models import CustomUser
-from .models import (
-    Voucher, VoucherCategory, UserProfile, Cart, CartItem, Redemption, Notification,
-    RewardTier, UserTier, TierBenefit, TierActivity, MiniGame, GameSession, LeaderboardEntry
+from accounts.models import (
+    VoucherCategory,
+    Voucher,
+    Cart,
+    CartItem,
+    Redemption,
+    UserProfile,
+    Notification,
+    RewardTier,
+    UserTier,
+    Promotion,
+    TierBenefit, TierActivity, MiniGame, GameSession, LeaderboardEntry
 )
 from .serializers import (
     RewardTierSerializer, UserTierSerializer, TierBenefitSerializer, TierActivitySerializer
@@ -308,38 +402,16 @@ def voucher_list(request):
         )
 
     vouchers = queryset.order_by('-featured', '-created_at')
+    tz_param = request.GET.get('tz')
 
     data = []
     for voucher in vouchers:
-        data.append({
+        eff_points, meta = _effective_points(voucher, tz_param)
+        item = {
             'id': voucher.id,
             'title': voucher.title,
             'category': voucher.category.name,
-            'points': voucher.points,
-            'original_points': voucher.original_points,
-            'discount': voucher.discount,
-            'rating': voucher.rating,
-            'image_url': voucher.image_url,
-            'description': voucher.description,
-            'terms': voucher.terms,
-            'quantity_available': voucher.quantity_available,
-            'featured': voucher.featured,
-            'created_at': voucher.created_at.isoformat()
-        })
-
-    return Response(data)
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def voucher_detail(request, voucher_id):
-    """Get voucher details"""
-    try:
-        voucher = Voucher.objects.get(id=voucher_id, is_active=True)
-        data = {
-            'id': voucher.id,
-            'title': voucher.title,
-            'category': voucher.category.name,
-            'points': voucher.points,
+            'points': eff_points,
             'original_points': voucher.original_points,
             'discount': voucher.discount,
             'rating': voucher.rating,
@@ -350,6 +422,41 @@ def voucher_detail(request, voucher_id):
             'featured': voucher.featured,
             'created_at': voucher.created_at.isoformat()
         }
+        if meta.get("promotion_active"):
+            item["promotion_active"] = True
+            item["promotion_name"] = meta.get("promotion_name")
+            item["promotion_discount_percentage"] = meta.get("discount_percentage")
+        data.append(item)
+
+    return Response(data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def voucher_detail(request, voucher_id):
+    """Get voucher details"""
+    try:
+        voucher = Voucher.objects.get(id=voucher_id, is_active=True)
+        tz_param = request.GET.get('tz')
+        eff_points, meta = _effective_points(voucher, tz_param)
+        data = {
+            'id': voucher.id,
+            'title': voucher.title,
+            'category': voucher.category.name,
+            'points': eff_points,
+            'original_points': voucher.original_points,
+            'discount': voucher.discount,
+            'rating': voucher.rating,
+            'image_url': voucher.image_url,
+            'description': voucher.description,
+            'terms': voucher.terms,
+            'quantity_available': voucher.quantity_available,
+            'featured': voucher.featured,
+            'created_at': voucher.created_at.isoformat()
+        }
+        if meta.get("promotion_active"):
+            data["promotion_active"] = True
+            data["promotion_name"] = meta.get("promotion_name")
+            data["promotion_discount_percentage"] = meta.get("discount_percentage")
         return Response(data)
     except Voucher.DoesNotExist:
         return Response({'error': 'Voucher not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -500,6 +607,11 @@ def user_profile(request):
             
             try:
                 user.save()
+                # Refresh leaderboard entry (ensures name/standing stay updated)
+                try:
+                    LeaderboardEntry.update_user_entry(user)
+                except Exception:
+                    pass
                 
                 profile = get_user_profile(user)
                 return Response({
@@ -651,7 +763,10 @@ def redeem_voucher(request):
 
     try:
         voucher = Voucher.objects.get(id=voucher_id, is_active=True)
-        total_points = voucher.points * quantity
+        # Apply promotion discount to points
+        tz_param = request.GET.get('tz')
+        eff_points, _meta = _effective_points(voucher, tz_param)
+        total_points = eff_points * quantity
 
         profile = get_user_profile(request.user)
 
@@ -728,7 +843,12 @@ def checkout_cart(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    total_points = sum(item.quantity * item.voucher.points for item in cart_items)
+    # Apply promotion discount per item
+    total_points = 0
+    tz_param = request.GET.get('tz')
+    for item in cart_items:
+        eff_points, _meta = _effective_points(item.voucher, tz_param)
+        total_points += item.quantity * eff_points
     profile = get_user_profile(request.user)
 
     if profile.points < total_points:
@@ -833,6 +953,38 @@ def checkout_cart(request):
             'is_multi_voucher': len(redemptions) > 1,
             'pdf_url': pdf_url
         }, status=status.HTTP_201_CREATED)
+
+
+# --- Active promotion endpoint ---
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def active_promotion(request):
+    """Expose the currently active promotion window and discount, if any."""
+    promo = _get_active_promotion()
+    if not promo:
+        return Response({"active": False})
+    promo_tz_name = os.getenv("PROMO_TIMEZONE", "Asia/Singapore")
+    try:
+        tz = ZoneInfo(promo_tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    now = timezone.now().astimezone(tz)
+    ends_in_seconds = None
+    try:
+        # Compute time remaining today until promo end in configured timezone
+        end_dt = now.replace(hour=promo.end_time.hour, minute=promo.end_time.minute, second=0, microsecond=0)
+        ends_in_seconds = max(0, int((end_dt - now).total_seconds()))
+    except Exception:
+        pass
+    return Response({
+        "active": True,
+        "name": getattr(promo, "name", "Promotion"),
+        "description": getattr(promo, "description", ""),
+        "discount_percentage": int(getattr(promo, "discount_percentage", 0)),
+        "start_time": getattr(promo, "start_time", None),
+        "end_time": getattr(promo, "end_time", None),
+        "ends_in_seconds": ends_in_seconds,
+    })
 
 # Notification Views
 @api_view(['GET'])
@@ -1892,11 +2044,77 @@ def submit_game_score(request):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Calculate points based on score and game settings
-        points_earned = min(
-            game.base_points + (score * 2),  # Base points + score multiplier
-            game.max_points
-        )
+        # Anti-abuse and difficulty settings (no migrations, configured here)
+        GAME_CONFIG = {
+            'spin_wheel': {
+                'cooldown_seconds': 90,
+                'daily_point_cap': 400,
+                'max_score_per_min': 200,  # guard unrealistic scores
+                'base_mult': 1.0,
+            },
+            'memory_game': {
+                'cooldown_seconds': 60,
+                'daily_point_cap': 500,
+                'max_score_per_min': 300,
+                'base_mult': 1.2,
+            },
+            'trivia_quiz': {
+                'cooldown_seconds': 60,
+                'daily_point_cap': 600,
+                'max_score_per_min': 400,
+                'base_mult': 1.5,
+            },
+            'daily_challenge': {
+                'cooldown_seconds': 120,
+                'daily_point_cap': 700,
+                'max_score_per_min': 500,
+                'base_mult': 2.0,
+            },
+        }
+
+        cfg = GAME_CONFIG.get(game.game_type, {'cooldown_seconds': 60, 'daily_point_cap': 500, 'max_score_per_min': 300, 'base_mult': 1.0})
+
+        # Enforce cooldown per user per game
+        last_session = GameSession.objects.filter(user=request.user, game=game).order_by('-played_at').first()
+        if last_session:
+            elapsed = (timezone.now() - last_session.played_at).total_seconds()
+            if elapsed < cfg['cooldown_seconds']:
+                wait = int(cfg['cooldown_seconds'] - elapsed)
+                return Response(
+                    {'error': f'Please wait {wait}s before playing {game.name} again.'},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+
+        # Enforce daily point cap per game
+        today = timezone.localdate()
+        today_points = GameSession.objects.filter(user=request.user, game=game, played_at__date=today).aggregate(sum=models.Sum('points_earned'))['sum'] or 0
+        if today_points >= cfg['daily_point_cap']:
+            return Response(
+                {'error': f'Daily point cap reached for {game.name}. Come back tomorrow!','daily_cap': cfg['daily_point_cap']},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Validate score vs duration (basic anomaly detection)
+        try:
+            duration_seconds = int(duration_seconds) if duration_seconds is not None else 0
+        except Exception:
+            duration_seconds = 0
+        safe_duration = max(5, duration_seconds)  # prevent divide-by-zero and ultra-fast exploits
+        max_allowed_score = int(cfg['max_score_per_min'] * (safe_duration / 60.0) + 50)
+        if int(score) > max_allowed_score:
+            # Clamp suspicious scores
+            score = max_allowed_score
+
+        # Performance-based scoring: base + scaled by difficulty and normalized by time
+        # Faster completions with reasonable score are rewarded; excessively long durations reduce points
+        norm = max(1.0, safe_duration / 45.0)  # 45s is reference duration
+        raw_points = game.base_points + int(cfg['base_mult'] * int(score) / norm)
+        points_earned = max(0, min(raw_points, game.max_points))
+
+        # Respect remaining daily cap
+        remaining_cap = max(0, cfg['daily_point_cap'] - today_points)
+        if points_earned > remaining_cap:
+            points_earned = remaining_cap
         
         # Create game session
         game_session = GameSession.objects.create(
@@ -1930,7 +2148,10 @@ def submit_game_score(request):
             'success': True,
             'points_earned': points_earned,
             'total_points': profile.points,
-            'game_session_id': game_session.id
+            'game_session_id': game_session.id,
+            'cooldown_seconds': cfg['cooldown_seconds'],
+            'daily_points_used': today_points + points_earned,
+            'daily_point_cap': cfg['daily_point_cap']
         })
         
     except Exception as e:

@@ -234,10 +234,15 @@ OAUTH2_PROVIDER = {
 # AUTH_USER_MODEL = 'accounts.CustomUser'
 
 # Email settings for OTP (example)
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+# Default to console backend in DEBUG to simplify local testing; can be overridden via EMAIL_BACKEND env
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
+)
 EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")  # type: ignore
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)  # type: ignore
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)  # type: ignore
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)  # type: ignore
 EMAIL_HOST_USER = env("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
 

@@ -1,5 +1,5 @@
 // API service for OptimaBank Loyalty System
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = (process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000').replace(/\/?$/, '');
 
 // Mini-Games API
 export const gamesApi = {
@@ -36,6 +36,25 @@ export const gamesApi = {
     if (!response.ok) throw new Error('Failed to fetch game history');
     const data = await response.json();
     return data.history;
+  },
+};
+
+// Promotions API
+export const promotionsApi = {
+  getActive: async (): Promise<ActivePromotion> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/promotions/active/`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch active promotion');
+    }
+    return response.json();
+  },
+  getActiveForTz: async (tz: string): Promise<ActivePromotion> => {
+    const url = `${API_BASE_URL}/accounts/promotions/active/?tz=${encodeURIComponent(tz)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error('Failed to fetch active promotion');
+    }
+    return response.json();
   },
 };
 
@@ -288,6 +307,17 @@ export interface ChatResponse {
   bot_message: ChatMessage;
 }
 
+// Promotions interfaces
+export interface ActivePromotion {
+  active: boolean;
+  name?: string;
+  description?: string;
+  discount_percentage?: number;
+  start_time?: string;
+  end_time?: string;
+  ends_in_seconds?: number;
+}
+
 // API Functions
 
 // Voucher APIs
@@ -357,6 +387,56 @@ export const userApi = {
     }
     
     return response.json();
+  },
+  // Update user profile (first/last name, phone, address)
+  updateProfile: async (payload: { first_name?: string; last_name?: string; phone_number?: string; address?: string; email?: string }): Promise<UserProfile> => {
+    const response = await fetch(`${API_BASE_URL}/accounts/profile/`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to update profile');
+    }
+    return response.json();
+  },
+  // Delete current user account
+  deleteAccount: async (): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/users/delete-account/`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to delete account');
+    }
+  },
+  // Request password reset email
+  requestPasswordReset: async (email: string): Promise<{ message: string }> => {
+    const response = await fetch(`${API_BASE_URL}/users/password-reset/request/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await response.json().catch(() => ({ message: 'OK' }));
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to request password reset');
+    }
+    return data;
+  },
+  // Confirm password reset with uid/token
+  confirmPasswordReset: async (uid: string, token: string, newPassword: string): Promise<{ message: string }> => {
+    const response = await fetch(`${API_BASE_URL}/users/password-reset/confirm/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, token, new_password: newPassword }),
+    });
+    const data = await response.json().catch(() => ({ message: 'OK' }));
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to reset password');
+    }
+    return data;
   },
 };
 

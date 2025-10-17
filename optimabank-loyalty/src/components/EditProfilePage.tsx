@@ -183,29 +183,27 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
         </Box>
       </DialogTitle>
       <DialogContent sx={{ 
-        overflow: isSmallScreen ? 'auto' : 'hidden', 
+        overflow: 'auto', 
         display: 'flex', 
         flexDirection: 'column', 
         p: 0,
-        // Premium scroll styling for mobile
-        ...(isSmallScreen && {
-          '&::-webkit-scrollbar': {
-            width: 8,
-          },
-          '&::-webkit-scrollbar-track': {
-            background: 'rgba(20, 20, 30, 0.3)',
-            borderRadius: 4,
-          },
-          '&::-webkit-scrollbar-thumb': {
-            background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
-            borderRadius: 4,
-            '&:hover': {
-              background: 'linear-gradient(45deg, #8a3ffb 30%, #A259FF 90%)',
-            }
-          },
-          scrollbarWidth: 'thin',
-          scrollbarColor: '#A259FF rgba(20, 20, 30, 0.3)',
-        })
+        // Premium scroll styling (always on)
+        '&::-webkit-scrollbar': {
+          width: 8,
+        },
+        '&::-webkit-scrollbar-track': {
+          background: 'rgba(20, 20, 30, 0.3)',
+          borderRadius: 4,
+        },
+        '&::-webkit-scrollbar-thumb': {
+          background: 'linear-gradient(45deg, #A259FF 30%, #8a3ffb 90%)',
+          borderRadius: 4,
+          '&:hover': {
+            background: 'linear-gradient(45deg, #8a3ffb 30%, #A259FF 90%)',
+          }
+        },
+        scrollbarWidth: 'thin',
+        scrollbarColor: '#A259FF rgba(20, 20, 30, 0.3)'
       }}>
         <Box
           sx={{
@@ -213,7 +211,7 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
             color: 'white',
             fontFamily: '"Inter", "Roboto", sans-serif',
             height: '100%',
-            overflow: isSmallScreen ? 'visible' : 'hidden',
+            overflow: 'auto',
             display: 'flex',
             flexDirection: 'column'
           }}
@@ -221,7 +219,7 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
           {/* Main Content */}
           <Box sx={{ 
             flex: 1, 
-            overflow: isSmallScreen ? 'visible' : 'hidden', 
+            overflow: 'auto', 
             p: 2,
             minHeight: isSmallScreen ? 'auto' : '100%'
           }}>
@@ -234,7 +232,7 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
                 backdropFilter: 'blur(10px)',
                 boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
                 height: isSmallScreen ? 'auto' : '100%',
-                overflow: isSmallScreen ? 'visible' : 'hidden',
+                overflow: 'auto',
                 display: 'flex',
                 flexDirection: 'column',
                 minHeight: isSmallScreen ? 'auto' : '100%'
@@ -274,11 +272,11 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
           <Box 
             component="form" 
             sx={{ 
-              mt: 2, 
+              mt: 4, 
               flex: isSmallScreen ? 'none' : 1, 
               display: 'flex',
               flexDirection: 'column',
-              overflow: isSmallScreen ? 'visible' : 'hidden',
+              overflow: 'auto',
               minHeight: isSmallScreen ? 'auto' : '100%'
             }}
           >
@@ -286,6 +284,7 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
               display: 'flex', 
               gap: 2, 
               mb: 2,
+              pt: 1,
               flexDirection: isSmallScreen ? 'column' : 'row'
             }}>
               <TextField
@@ -294,6 +293,7 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
                 name="firstName"
                 value={userData.firstName}
                 onChange={handleInputChange}
+                InputLabelProps={{ shrink: true, sx: { color: '#FFFFFF', fontWeight: 600 } }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     color: 'white',
@@ -321,6 +321,7 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
                 name="lastName"
                 value={userData.lastName}
                 onChange={handleInputChange}
+                InputLabelProps={{ shrink: true, sx: { color: '#FFFFFF', fontWeight: 600 } }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     color: 'white',
@@ -352,6 +353,7 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
               value={userData.email}
               disabled
               helperText="Email cannot be changed as it's used for account authentication"
+              InputLabelProps={{ shrink: true, sx: { color: '#FFFFFF', fontWeight: 600 } }}
               sx={{ 
                 mb: 2,
                 '& .MuiOutlinedInput-root': {
@@ -385,6 +387,7 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
               name="phone"
               value={userData.phone}
               onChange={handleInputChange}
+              InputLabelProps={{ shrink: true, sx: { color: '#FFFFFF', fontWeight: 600 } }}
               sx={{ 
                 mb: 2,
                 '& .MuiOutlinedInput-root': {
@@ -415,6 +418,7 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
               rows={2}
               value={userData.address}
               onChange={handleInputChange}
+              InputLabelProps={{ shrink: true, sx: { color: '#FFFFFF', fontWeight: 600 } }}
               sx={{ 
                 mb: 2,
                 '& .MuiOutlinedInput-root': {
