@@ -11,14 +11,13 @@ import {
   useTheme,
   useMediaQuery,
   InputAdornment,
-  Snackbar,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import { useNavigate } from "react-router-dom";
-import { isMobile, isTablet } from "react-device-detect";
+ 
 import { GoogleLogin, CredentialResponse } from "@react-oauth/google";
 import illustration from "../illustration.png";
 import logo from "../logo.png";
@@ -45,7 +44,6 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
   const navigate = useNavigate();
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down("md"));
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [formData, setFormData] = useState<{
     firstName?: string;
@@ -135,79 +133,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
     }
   };
 
-  // Helper: register biometric credential (frontend/demo)
-  const registerBiometricClientSide = async () => {
-    try {
-      if (!window.PublicKeyCredential) {
-        onShowSnackbar("Biometric/WebAuthn not supported on this device/browser.", 'error');
-        return false;
-      }
-
-      // NOTE: In production you SHOULD fetch these options from your backend:
-      // - server-generated challenge (ArrayBuffer)
-      // - user.id (server-known stable identifier)
-      // and then send the attestation response back to the server for verification.
-      //
-      // This function performs a client-side demo registration and stores credential ID in localStorage.
-
-      // generate a challenge
-      const challenge = new Uint8Array(32);
-      window.crypto.getRandomValues(challenge);
-
-      // user id should be stable per user — here we use the user's email for demo
-      const userId = formData.email ? new TextEncoder().encode(formData.email) : new Uint8Array(16);
-
-      const publicKey: any = {
-        challenge: challenge.buffer,
-        rp: { name: "Optima Bank", id: window.location.hostname },
-        user: {
-          id: userId.buffer,
-          name: formData.email || "unknown",
-          displayName: `${formData.firstName || ""} ${formData.lastName || ""}`.trim() || (formData.email || "User"),
-        },
-        pubKeyCredParams: [{ type: "public-key", alg: -7 }], // ES256
-        authenticatorSelection: {
-          authenticatorAttachment: "platform",
-          userVerification: "required",
-        },
-        timeout: 60000,
-        attestation: "none",
-      };
-
-      const credential = (await navigator.credentials.create({
-        publicKey,
-      })) as PublicKeyCredential | null;
-
-      if (!credential) {
-        onShowSnackbar("Biometric registration was cancelled.", 'warning');
-        return false;
-      }
-
-      // convert ArrayBuffer rawId -> Uint8Array -> base64 safely
-      const rawIdBuf = credential.rawId as ArrayBuffer;
-      const rawIdArr = new Uint8Array(rawIdBuf);
-      const rawIdStr = String.fromCharCode.apply(null, Array.from(rawIdArr));
-      const credIdBase64 = btoa(rawIdStr);
-
-      // store locally (demo); in production send this to backend
-      localStorage.setItem("biometricEnabled", "true");
-      localStorage.setItem("biometricCredId", credIdBase64);
-      localStorage.setItem("biometricChoiceMade", "true");
-
-      // notify parent (App.tsx) that biometric has been enabled (parent may also have its own logic)
-      try {
-        onEnableBiometric();
-      } catch (e) {
-        // ignore if parent doesn't need it
-      }
-
-      return true;
-    } catch (err) {
-      console.error("Biometric registration error:", err);
-      onShowSnackbar("Failed to register biometric. Try again or use normal login.", 'error');
-      return false;
-    }
-  };
+  
 
 
   return (

@@ -60,7 +60,6 @@ import {
   AccountCircle as AccountCircleIcon,
   EmojiEvents,
   Close,
-  Person as PersonIcon,
   SportsEsports as GameControllerIcon,
   Star as StarIcon,
   Edit as EditIcon,

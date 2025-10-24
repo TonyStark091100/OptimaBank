@@ -45,7 +45,6 @@ interface TierProgressProps {
 
 const TierProgress: React.FC<TierProgressProps> = ({ onTierUpgrade, onShowSnackbar }) => {
   const theme = useTheme();
-  const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
   const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
   
