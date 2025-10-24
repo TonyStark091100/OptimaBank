@@ -316,10 +316,7 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
           
           {timezones.map((tz) => {
             const promotions = getTimezonePromotions(tz.timezone);
-            const ap = promoByTz[tz.timezone];
-            const secondsLeft = countdowns[tz.timezone];
             const businessStatus = getTimezoneBusinessStatus(tz.timezone);
-            const nextPromotion = getNextPromotionForTimezone(tz.timezone);
             const hasPromotions = promotions.length > 0;
             const isSelected = selectedTimezone === tz.timezone;
             
@@ -497,7 +494,6 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
           const ap = promoByTz[tz.timezone];
           const secondsLeft = countdowns[tz.timezone];
           const businessStatus = getTimezoneBusinessStatus(tz.timezone);
-          const nextPromotion = getNextPromotionForTimezone(tz.timezone);
           const hasPromotions = promotions.length > 0;
           const isSelected = selectedTimezone === tz.timezone;
           
