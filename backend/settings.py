@@ -39,12 +39,11 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "your-secret-key-here")
 # Set DJANGO_DEBUG to 'True' in environment to enable debug
 DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = [
-    "optimabank-production.up.railway.app",
-    ".up.railway.app",
-    "localhost",
-    "127.0.0.1",
-]
+# Allowed hosts: configurable via DJANGO_ALLOWED_HOSTS env (comma-separated)
+ALLOWED_HOSTS = [h for h in os.getenv(
+    "DJANGO_ALLOWED_HOSTS",
+    ".onrender.com,localhost,127.0.0.1"
+).split(",") if h]
 
 
 # Application definition
