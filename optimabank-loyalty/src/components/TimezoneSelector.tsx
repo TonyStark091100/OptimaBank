@@ -389,11 +389,14 @@ const TimezoneSelector: React.FC<TimezoneSelectorProps> = ({
                       <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
                         {tz.country} • {tz.offset}
                       </Typography>
-                      {nextPromotion && (
-                        <Typography variant="caption" sx={{ color: '#FFD700', display: 'block', mt: 0.5 }}>
-                          Next: {nextPromotion.name} at {nextPromotion.time}
-                        </Typography>
-                      )}
+                      {(() => {
+                        const np = getNextPromotionForTimezone(tz.timezone);
+                        return np ? (
+                          <Typography variant="caption" sx={{ color: '#FFD700', display: 'block', mt: 0.5 }}>
+                            Next: {np.name} at {np.time}
+                          </Typography>
+                        ) : null;
+                      })()}
                     </Box>
                   }
                   secondary={
