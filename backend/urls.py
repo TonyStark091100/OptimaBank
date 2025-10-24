@@ -6,8 +6,8 @@ including admin, authentication, users, and accounts.
 """
 
 from django.contrib import admin
-from django.urls import path, include
-from django.views.generic import RedirectView
+from django.urls import path, include, re_path
+from django.views.generic import RedirectView, TemplateView
 from django.conf import settings
 from django.conf.urls.static import static
 import os
@@ -27,7 +27,10 @@ urlpatterns = [
     path("users/", include("users.urls")),
     path("accounts/", include("accounts.urls")),
     path("chatbot/", include("chatbot.urls")),
-    path("", RedirectView.as_view(url=FRONTEND_URL or "/accounts/")),
+    # Serve the SPA's index.html at root
+    path("", TemplateView.as_view(template_name="index.html")),
+    # Catch-all for client-side routes (exclude admin and API prefixes)
+    re_path(r"^(?!admin/|api/|auth/|users/|accounts/|chatbot/).*$", TemplateView.as_view(template_name="index.html")),
 ]
 
 # Serve media files during development
