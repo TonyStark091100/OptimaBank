@@ -313,29 +313,17 @@ const AppInner: React.FC = () => {
   // ------------------------
   const requestOtp = async (email: string) => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/users/request-otp/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to request OTP");
-      showSnackbar(data.message, 'success');
+      const data = await authApi.requestOtp(email);
+      showSnackbar(data.message || 'OTP sent to your email', 'success');
     } catch (err: any) {
-      showSnackbar(err.message, 'error');
+      showSnackbar(err.message || 'Failed to request OTP', 'error');
     }
   };
 
   const verifyOtp = async (email: string, otp: string, skipNavigation = false) => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/users/verify-otp/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, otp }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "OTP verification failed");
-      showSnackbar(data.message, 'success');
+      const data = await authApi.verifyOtp(email, otp);
+      showSnackbar(data.message || 'OTP verified successfully', 'success');
       
       // If we have a stored password, it means this is a login flow
       const tempPassword = localStorage.getItem('tempPassword');
