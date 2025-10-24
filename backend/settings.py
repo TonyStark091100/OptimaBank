@@ -26,6 +26,8 @@ load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+FRONTEND_BUILD_DIR = os.path.join(BASE_DIR, 'optimabank-loyalty', 'build')
+SERVE_SPA_FROM_BUILD = os.path.isdir(FRONTEND_BUILD_DIR)
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
@@ -69,6 +71,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -82,8 +85,9 @@ ROOT_URLCONF = "backend.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [
-            os.path.join(BASE_DIR, 'optimabank-loyalty', 'build'),
+        "DIRS": (
+            [FRONTEND_BUILD_DIR] if SERVE_SPA_FROM_BUILD else []
+        ) + [
             os.path.join(BASE_DIR, 'accounts', 'templates'),
         ],
         "APP_DIRS": True,
@@ -150,8 +154,9 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'optimabank-loyalty', 'build', 'static'),
-]
+    os.path.join(FRONTEND_BUILD_DIR, 'static'),
+] if SERVE_SPA_FROM_BUILD else []
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Media files (user uploads, generated files)
 MEDIA_URL = '/media/'

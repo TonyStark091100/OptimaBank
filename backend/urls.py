@@ -11,11 +11,15 @@ from django.views.generic import RedirectView, TemplateView
 from django.conf import settings
 from django.conf.urls.static import static
 import os
+from pathlib import Path
 
 # import the new view
 from accounts.views import google_auth
 
 FRONTEND_URL = os.getenv("FRONTEND_URL") or getattr(settings, "FRONTEND_URL", None)
+BASE_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_BUILD_DIR = os.path.join(BASE_DIR, 'optimabank-loyalty', 'build')
+SERVE_SPA_FROM_BUILD = os.path.isdir(FRONTEND_BUILD_DIR)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -27,11 +31,17 @@ urlpatterns = [
     path("users/", include("users.urls")),
     path("accounts/", include("accounts.urls")),
     path("chatbot/", include("chatbot.urls")),
-    # Serve the SPA's index.html at root
-    path("", TemplateView.as_view(template_name="index.html")),
-    # Catch-all for client-side routes (exclude admin and API prefixes)
-    re_path(r"^(?!admin/|api/|auth/|users/|accounts/|chatbot/).*$", TemplateView.as_view(template_name="index.html")),
 ]
+
+if SERVE_SPA_FROM_BUILD:
+    urlpatterns += [
+        path("", TemplateView.as_view(template_name="index.html")),
+        re_path(r"^(?!admin/|api/|auth/|users/|accounts/|chatbot/).*$", TemplateView.as_view(template_name="index.html")),
+    ]
+else:
+    urlpatterns += [
+        path("", RedirectView.as_view(url=FRONTEND_URL or "/accounts/")),
+    ]
 
 # Serve media files during development
 if settings.DEBUG:
