@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, useNavigate } from "react-route
 import { Box, Snackbar, Alert } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { motion, AnimatePresence } from "framer-motion";
-import { GoogleOAuthProvider, CredentialResponse } from "@react-oauth/google";
+import { CredentialResponse } from "@react-oauth/google";
 import { authApi } from "./services/api";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { TimezoneProvider } from "./contexts/TimezoneContext";
@@ -710,7 +710,6 @@ const AppInner: React.FC = () => {
 };
 
 const App: React.FC = () => {
-  const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID || "59629112789-huo85fv2fpcpba1jqqdic5vlq43m4p5n.apps.googleusercontent.com";
   
   // Global error handler for ResizeObserver
   useEffect(() => {
@@ -737,11 +736,9 @@ const App: React.FC = () => {
   return (
     <LanguageProvider>
       <TimezoneProvider>
-    <GoogleOAuthProvider clientId={googleClientId}>
       <Router>
         <AppInner />
       </Router>
-    </GoogleOAuthProvider>
       </TimezoneProvider>
     </LanguageProvider>
   );
