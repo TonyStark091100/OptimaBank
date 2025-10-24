@@ -10,9 +10,12 @@ from django.urls import path, include
 from django.views.generic import RedirectView
 from django.conf import settings
 from django.conf.urls.static import static
+import os
 
 # import the new view
 from accounts.views import google_auth
+
+FRONTEND_URL = os.getenv("FRONTEND_URL") or getattr(settings, "FRONTEND_URL", None)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -24,7 +27,7 @@ urlpatterns = [
     path("users/", include("users.urls")),
     path("accounts/", include("accounts.urls")),
     path("chatbot/", include("chatbot.urls")),
-    path("", RedirectView.as_view(url="/accounts/")),
+    path("", RedirectView.as_view(url=FRONTEND_URL or "/accounts/")),
 ]
 
 # Serve media files during development
