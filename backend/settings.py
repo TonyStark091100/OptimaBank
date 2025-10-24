@@ -36,7 +36,12 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "your-secret-key-here")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+ALLOWED_HOSTS = [
+    "optimabank-production.up.railway.app",
+    ".up.railway.app",
+    "localhost",
+    "127.0.0.1",
+]
 
 
 # Application definition
@@ -243,8 +248,8 @@ EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")  # type: ignore
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)  # type: ignore
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)  # type: ignore
 EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)  # type: ignore
-EMAIL_HOST_USER = env("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 
 # Default email address (important for send_mail)
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
