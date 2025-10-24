@@ -1,5 +1,8 @@
 // API service for OptimaBank Loyalty System
-const API_BASE_URL = (process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000').replace(/\/?$/, '');
+const API_BASE_URL = (
+  (process.env.REACT_APP_API_URL as string) ||
+  (typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000')
+).replace(/\/?$/, '');
 
 // Mini-Games API
 export const gamesApi = {
