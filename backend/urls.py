@@ -12,6 +12,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 import os
 from pathlib import Path
+from django.views.static import serve as static_serve
 
 # import the new view
 from accounts.views import google_auth
@@ -35,6 +36,11 @@ urlpatterns = [
 
 if SERVE_SPA_FROM_BUILD:
     urlpatterns += [
+        # Serve PWA/manifest and icon assets from the React build root
+        path("manifest.json", static_serve, {"path": "manifest.json", "document_root": FRONTEND_BUILD_DIR}),
+        path("favicon.ico", static_serve, {"path": "favicon.ico", "document_root": FRONTEND_BUILD_DIR}),
+        path("logo192.png", static_serve, {"path": "logo192.png", "document_root": FRONTEND_BUILD_DIR}),
+        path("logo512.png", static_serve, {"path": "logo512.png", "document_root": FRONTEND_BUILD_DIR}),
         path("", TemplateView.as_view(template_name="index.html")),
         re_path(r"^(?!admin/|api/|auth/|users/|accounts/|chatbot/).*$", TemplateView.as_view(template_name="index.html")),
     ]

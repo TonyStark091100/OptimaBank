@@ -38,8 +38,8 @@ const theme = createTheme({
   },
 });
 
-// ✅ Put your Google Client ID here or in .env
-const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID || "59629112789-huo85fv2fpcpba1jqqdic5vlq43m4p5n.apps.googleusercontent.com";
+// ✅ Put your Google Client ID in .env only (no fallback)
+const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID as string;
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
