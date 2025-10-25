@@ -298,7 +298,7 @@ def verify_otp(request):
 @permission_classes([AllowAny])
 def google_auth(request):
     """Authenticate user using Google OAuth2 id_token."""
-    token = request.data.get("id_token")
+    token = request.data.get("id_token") or request.data.get("token")
     if not token:
         return Response(
             {"error": "ID token is required"},
