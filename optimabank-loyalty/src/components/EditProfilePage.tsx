@@ -19,6 +19,7 @@ import {
   AccountCircle as AccountCircleIcon,
   Save as SaveIcon
 } from '@mui/icons-material';
+import { userApi } from '../services/api';
 
 interface EditProfilePageProps {
   open?: boolean;
@@ -44,41 +45,29 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
       try {
         const token = localStorage.getItem('access_token');
         if (token) {
-          const response = await fetch('http://127.0.0.1:8000/accounts/profile/', {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
+          const profileData = await userApi.getProfile();
+          setUserData({
+            firstName: profileData.first_name || '',
+            lastName: profileData.last_name || '',
+            email: profileData.email || '',
+            phone: (profileData as any).phone_number || '',
+            address: (profileData as any).address || ''
           });
-          
-          if (response.ok) {
-            const profileData = await response.json();
-            setUserData({
-              firstName: profileData.first_name || '',
-              lastName: profileData.last_name || '',
-              email: profileData.email || '',
-              phone: profileData.phone_number || '',
-              address: profileData.address || ''
-            });
-          } else {
-            // Fallback to localStorage if API fails
-            const storedName = localStorage.getItem('userName') || '';
-            const storedEmail = localStorage.getItem('userEmail') || '';
-            
-            const nameParts = storedName.split(' ');
-            const firstName = nameParts[0] || '';
-            const lastName = nameParts.slice(1).join(' ') || '';
-            
-            setUserData(prev => ({
-              ...prev,
-              firstName,
-              lastName,
-              email: storedEmail,
-              phone: prev.phone || '',
-              address: prev.address || ''
-            }));
-          }
+        } else {
+          // Fallback to localStorage if not authenticated
+          const storedName = localStorage.getItem('userName') || '';
+          const storedEmail = localStorage.getItem('userEmail') || '';
+          const nameParts = storedName.split(' ');
+          const firstName = nameParts[0] || '';
+          const lastName = nameParts.slice(1).join(' ') || '';
+          setUserData(prev => ({
+            ...prev,
+            firstName,
+            lastName,
+            email: storedEmail,
+            phone: prev.phone || '',
+            address: prev.address || ''
+          }));
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -124,26 +113,13 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ open = false, onClose
       try {
         const token = localStorage.getItem('access_token');
         if (token) {
-          const response = await fetch('http://127.0.0.1:8000/accounts/profile/', {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              first_name: userData.firstName,
-              last_name: userData.lastName,
-              phone_number: userData.phone,
-              address: userData.address,
-            }),
-          });
-          
-          if (response.ok) {
-            const updatedProfile = await response.json();
-            console.log('Profile updated successfully:', updatedProfile);
-          } else {
-            console.warn('Failed to update profile on backend, but local changes saved');
-          }
+          const updatedProfile = await userApi.updateProfile({
+            first_name: userData.firstName,
+            last_name: userData.lastName,
+            phone_number: userData.phone,
+            address: userData.address,
+          } as any);
+          console.log('Profile updated successfully:', updatedProfile);
         }
       } catch (apiError) {
         console.warn('API update failed, but local changes saved:', apiError);
