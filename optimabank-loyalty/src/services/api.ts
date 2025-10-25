@@ -721,12 +721,13 @@ export const authApi = {
       body: JSON.stringify({ email }),
     });
 
+    const respClone = response.clone();
     let data: any;
     try {
       data = await response.json();
     } catch (e) {
       // Fallback to text (likely HTML error page)
-      const text = await response.text();
+      const text = await respClone.text();
       if (!response.ok) {
         throw new Error(`Failed to request OTP: ${text.slice(0, 200)}`);
       }
@@ -748,11 +749,12 @@ export const authApi = {
       body: JSON.stringify({ email, otp }),
     });
 
+    const respClone = response.clone();
     let data: any;
     try {
       data = await response.json();
     } catch (e) {
-      const text = await response.text();
+      const text = await respClone.text();
       if (!response.ok) {
         throw new Error(`Failed to verify OTP: ${text.slice(0, 200)}`);
       }
