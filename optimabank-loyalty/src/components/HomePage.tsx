@@ -41,7 +41,8 @@ import {
   VoucherCategory,
   UserProfile,
   Cart,
-  Notification
+  Notification,
+  testAuthentication
 } from '../services/api';
 import SettingsPage from './SettingsPage';
 import TierProgress from './TierProgress';
@@ -84,8 +85,6 @@ import {
   LocalGroceryStore as GroceryIcon
 } from '@mui/icons-material';
 import logo from '../logo.png';
-
-const API_BASE_URL = 'http://127.0.0.1:8000';
 
 // Icon mapping for voucher categories
 const categoryIcons: Record<string, React.ReactElement> = {
@@ -181,17 +180,11 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
     console.log('User is authenticated, proceeding with data load');
   }, []);
 
-  // Test token validity
-  const testTokenValidity = async (token: string): Promise<boolean> => {
+  // Test token validity using shared API utility (respects current API base URL)
+  const testTokenValidity = async (): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/accounts/profile/`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      console.log('Token validation response status:', response.status);
-      return response.ok;
+      const ok = await testAuthentication();
+      return ok;
     } catch (error) {
       console.error('Token validation error:', error);
       return false;
@@ -234,7 +227,7 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
         console.log('Loading data with token:', token.substring(0, 20) + '...');
         
         // Test token validity first
-        const isTokenValid = await testTokenValidity(token);
+        const isTokenValid = await testTokenValidity();
         if (!isTokenValid) {
           console.error('Token is invalid, redirecting to login');
           localStorage.removeItem('access_token');
