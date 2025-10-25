@@ -34,6 +34,7 @@ def generate_otp(user: CustomUser) -> OTP:
         created_at=timezone.now(),
         is_used=False,
     )
+    return otp
 
 
 # -------------------------
@@ -236,16 +237,22 @@ def request_otp(request):
     # Generate OTP
     otp = generate_otp(user)
 
-    # Send OTP via email
-    send_mail(
-        subject="Your OTP Code",
-        message=f"Your OTP code is {otp.code}. It will expire in 5 minutes.",
-        from_email=settings.EMAIL_HOST_USER,
-        recipient_list=[user.email],
-        fail_silently=False,
-    )
-
-    return Response({"message": "OTP sent successfully"}, status=status.HTTP_200_OK)
+    # Send OTP via email (handle provider errors gracefully)
+    try:
+        send_mail(
+            subject="Your OTP Code",
+            message=f"Your OTP code is {otp.code}. It will expire in 5 minutes.",
+            from_email=settings.EMAIL_HOST_USER,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+        return Response({"message": "OTP sent successfully"}, status=status.HTTP_200_OK)
+    except Exception as e:
+        # Still return a JSON response indicating email failure, but OTP was generated
+        return Response(
+            {"error": "Failed to send OTP email", "details": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(["POST"])
