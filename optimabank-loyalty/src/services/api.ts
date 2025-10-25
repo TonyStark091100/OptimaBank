@@ -720,9 +720,19 @@ export const authApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
     });
-    
-    const data = await response.json();
-    
+
+    let data: any;
+    try {
+      data = await response.json();
+    } catch (e) {
+      // Fallback to text (likely HTML error page)
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(`Failed to request OTP: ${text.slice(0, 200)}`);
+      }
+      return { message: text };
+    }
+
     if (!response.ok) {
       throw new Error(data.error || 'Failed to request OTP');
     }
@@ -737,9 +747,18 @@ export const authApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, otp }),
     });
-    
-    const data = await response.json();
-    
+
+    let data: any;
+    try {
+      data = await response.json();
+    } catch (e) {
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(`Failed to verify OTP: ${text.slice(0, 200)}`);
+      }
+      return { message: text };
+    }
+
     if (!response.ok) {
       throw new Error(data.error || 'Failed to verify OTP');
     }
