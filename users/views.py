@@ -11,7 +11,7 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -69,6 +69,7 @@ def delete_account(request):
 # -------------------------
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@authentication_classes([])
 def password_reset_request(request):
     """Send password reset email with tokenized link."""
     email = request.data.get("email")
@@ -103,6 +104,7 @@ def password_reset_request(request):
 
 @api_view(["POST"]) 
 @permission_classes([AllowAny])
+@authentication_classes([])
 def password_reset_confirm(request):
     """Confirm password reset with uid and token, set new password."""
     uidb64 = request.data.get("uid")
@@ -213,6 +215,7 @@ def register_user(request):
 # -------------------------
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@authentication_classes([])
 def request_otp(request):
     """Request an OTP for login or verification."""
     email = request.data.get("email")
@@ -247,6 +250,7 @@ def request_otp(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@authentication_classes([])
 def verify_otp(request):
     """Verify the OTP for a given email."""
     email = request.data.get("email")
