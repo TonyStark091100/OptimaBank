@@ -356,9 +356,14 @@ const HomePage: React.FC<HomePageProps> = ({ onShowSnackbar, onLogout }) => {
     return score;
   };
 
-  // Get featured vouchers for banner
-  const featuredVouchers = vouchers.filter(v => v.featured);
-  const currentBannerVoucher = featuredVouchers[currentBannerIndex];
+  // Get featured vouchers for banner (newest first, limit to 10)
+  const featuredVouchers = vouchers
+    .filter(v => v.featured)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 10);
+  const currentBannerVoucher = featuredVouchers.length > 0
+    ? featuredVouchers[currentBannerIndex % featuredVouchers.length]
+    : undefined;
 
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget);
   const handleProfileMenuClose = () => setAnchorEl(null);
