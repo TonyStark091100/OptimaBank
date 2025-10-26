@@ -206,11 +206,14 @@ const LoginPage: React.FC<LoginPageProps> = ({
   const handleOtpRequest = async () => {
     if (!email) return onShowSnackbar("Please enter your email first", 'warning');
     try {
-      await onRequestOtp(email);
+      // Open dialog immediately for better UX, even while request is in-flight
       setOtpDialogOpen(true);
+      await onRequestOtp(email);
+      onShowSnackbar('OTP sent to your email', 'success');
     } catch (err) {
       console.error(err);
-      onShowSnackbar("Failed to send OTP", 'error');
+      // Keep dialog open so user can retry entering OTP if email arrives late
+      onShowSnackbar("Failed to send OTP. Please check your email configuration or try again.", 'error');
     }
   };
 

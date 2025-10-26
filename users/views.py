@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.mail import send_mail
+import threading
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
@@ -237,22 +238,28 @@ def request_otp(request):
     # Generate OTP
     otp = generate_otp(user)
 
-    # Send OTP via email (handle provider errors gracefully)
-    try:
-        send_mail(
-            subject="Your OTP Code",
-            message=f"Your OTP code is {otp.code}. It will expire in 5 minutes.",
-            from_email=settings.EMAIL_HOST_USER,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
-        return Response({"message": "OTP sent successfully"}, status=status.HTTP_200_OK)
-    except Exception as e:
-        # Still return a JSON response indicating email failure, but OTP was generated
-        return Response(
-            {"error": "Failed to send OTP email", "details": str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+    # Send OTP via email asynchronously so the API responds fast
+    def _send_email_async(to_email: str, code: str):
+        try:
+            send_mail(
+                subject="Your OTP Code",
+                message=f"Your OTP code is {code}. It will expire in 5 minutes.",
+                from_email=settings.EMAIL_HOST_USER,
+                recipient_list=[to_email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            # Log the error but do not affect the API response
+            try:
+                import logging
+                logging.getLogger(__name__).exception("Failed to send OTP email: %s", e)
+            except Exception:
+                pass
+
+    threading.Thread(target=_send_email_async, args=(user.email, otp.code), daemon=True).start()
+
+    # Respond immediately so the client can show the OTP dialog without delay
+    return Response({"message": "OTP generated and email dispatch initiated"}, status=status.HTTP_200_OK)
 
 
 @api_view(["POST"])
