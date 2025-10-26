@@ -9,6 +9,8 @@ import threading
 import smtplib
 import ssl
 import threading
+import os
+import requests
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
@@ -255,7 +257,9 @@ def request_otp(request):
         # but still continue so frontend UX is consistent
         pass
 
-    # Optional: SMTP connectivity/auth pre-check to avoid false success
+    # Determine email sending method: prefer SMTP; if blocked, fallback to SendGrid API if configured
+    send_method = 'smtp'
+    smtp_error = None
     if is_smtp_backend:
         host = getattr(settings, 'EMAIL_HOST', 'smtp.gmail.com')
         port = int(getattr(settings, 'EMAIL_PORT', 587))
@@ -273,29 +277,62 @@ def request_otp(request):
                 server.login(email_user, email_password)
             server.quit()
         except Exception as smtp_err:
-            return Response(
-                {"error": f"SMTP connection/login failed: {str(smtp_err)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            smtp_error = str(smtp_err)
+            # Fallback to SendGrid HTTP API if available
+            if os.getenv('SENDGRID_API_KEY'):
+                send_method = 'sendgrid'
+            else:
+                return Response(
+                    {"error": f"SMTP connection/login failed: {smtp_error}", "hint": "Set SENDGRID_API_KEY to use HTTP API fallback on hosts that block SMTP."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
     # Generate OTP
     otp = generate_otp(user)
 
     # Send OTP via email asynchronously so the API responds fast
     def _send_email_async(to_email: str, code: str):
+        subject = "Your OTP Code"
+        message = f"Your OTP code is {code}. It will expire in 5 minutes."
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or getattr(settings, 'EMAIL_HOST_USER', None)
         try:
-            send_mail(
-                subject="Your OTP Code",
-                message=f"Your OTP code is {code}. It will expire in 5 minutes.",
-                from_email=settings.EMAIL_HOST_USER,
-                recipient_list=[to_email],
-                fail_silently=False,
-            )
+            if send_method == 'smtp':
+                send_mail(
+                    subject=subject,
+                    message=message,
+                    from_email=from_email,
+                    recipient_list=[to_email],
+                    fail_silently=False,
+                )
+            else:
+                # Send via SendGrid HTTP API
+                api_key = os.getenv('SENDGRID_API_KEY')
+                if not api_key:
+                    raise RuntimeError('SENDGRID_API_KEY not configured')
+                sg_payload = {
+                    "personalizations": [{"to": [{"email": to_email}]}],
+                    "from": {"email": from_email},
+                    "subject": subject,
+                    "content": [{"type": "text/plain", "value": message}],
+                }
+                resp = requests.post(
+                    "https://api.sendgrid.com/v3/mail/send",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json=sg_payload,
+                    timeout=15,
+                )
+                if resp.status_code >= 300:
+                    raise RuntimeError(f"SendGrid send failed: {resp.status_code} - {resp.text[:200]}")
+            try:
+                import logging
+                logging.getLogger(__name__).info("OTP email sent successfully via %s to %s", send_method, to_email)
+            except Exception:
+                pass
         except Exception as e:
             # Log the error but do not affect the API response
             try:
                 import logging
-                logging.getLogger(__name__).exception("Failed to send OTP email: %s", e)
+                logging.getLogger(__name__).exception("Failed to send OTP email via %s: %s", send_method, e)
             except Exception:
                 pass
 
@@ -306,6 +343,7 @@ def request_otp(request):
         "message": "OTP generated and email dispatch initiated",
         "to": user.email,
         "backend": email_backend,
+        "method": send_method,
     }
     if not is_smtp_backend:
         response_payload["note"] = "Using console email backend; OTP content is printed in server logs. Configure SMTP to send real emails."
@@ -407,6 +445,54 @@ def email_health(request):
 
     except Exception as e:
         return Response({"status": "error", "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# -------------------------
+# Email Test Send (diagnostic)
+# -------------------------
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@authentication_classes([])
+def email_test_send(request):
+    """Send a test email to verify SMTP delivery. Returns success or detailed error."""
+    to_email = request.data.get("email")
+    if not to_email:
+        return Response({"error": "email is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    email_backend = getattr(settings, 'EMAIL_BACKEND', '') or ''
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or getattr(settings, 'EMAIL_HOST_USER', None)
+
+    # Reuse the same SMTP pre-check as request_otp
+    is_smtp_backend = email_backend.endswith('smtp.EmailBackend')
+    if not is_smtp_backend:
+        return Response({
+            "status": "not_smtp",
+            "backend": email_backend,
+            "message": "EMAIL_BACKEND is not SMTP; test send will not reach inbox."
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        send_mail(
+            subject="OptimaBank Test Email",
+            message="This is a test email to verify SMTP delivery from OptimaBank.",
+            from_email=from_email,
+            recipient_list=[to_email],
+            fail_silently=False,
+        )
+        return Response({
+            "status": "sent",
+            "to": to_email,
+            "from": from_email,
+            "backend": email_backend
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            "status": "error",
+            "backend": email_backend,
+            "from": from_email,
+            "to": to_email,
+            "error": str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # -------------------------
