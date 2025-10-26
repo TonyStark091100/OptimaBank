@@ -235,6 +235,23 @@ def request_otp(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # Validate email sending configuration before proceeding
+    email_backend = getattr(settings, 'EMAIL_BACKEND', '') or ''
+    email_user = getattr(settings, 'EMAIL_HOST_USER', None)
+    email_password = getattr(settings, 'EMAIL_HOST_PASSWORD', None)
+    is_smtp_backend = email_backend.endswith('smtp.EmailBackend')
+
+    if is_smtp_backend and (not email_user or not email_password):
+        return Response(
+            {"error": "Email is not configured. Please set EMAIL_HOST_USER and EMAIL_HOST_PASSWORD on the server."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    if not is_smtp_backend:
+        # Warn clients that emails may be printed to console in development
+        # but still continue so frontend UX is consistent
+        pass
+
     # Generate OTP
     otp = generate_otp(user)
 
