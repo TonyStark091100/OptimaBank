@@ -6,6 +6,9 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.mail import send_mail
 import threading
+import smtplib
+import ssl
+import threading
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
@@ -252,6 +255,29 @@ def request_otp(request):
         # but still continue so frontend UX is consistent
         pass
 
+    # Optional: SMTP connectivity/auth pre-check to avoid false success
+    if is_smtp_backend:
+        host = getattr(settings, 'EMAIL_HOST', 'smtp.gmail.com')
+        port = int(getattr(settings, 'EMAIL_PORT', 587))
+        use_tls = getattr(settings, 'EMAIL_USE_TLS', True)
+        try:
+            if use_tls:
+                server = smtplib.SMTP(host, port, timeout=10)
+                server.ehlo()
+                server.starttls(context=ssl.create_default_context())
+                server.ehlo()
+            else:
+                server = smtplib.SMTP(host, port, timeout=10)
+                server.ehlo()
+            if email_user and email_password:
+                server.login(email_user, email_password)
+            server.quit()
+        except Exception as smtp_err:
+            return Response(
+                {"error": f"SMTP connection/login failed: {str(smtp_err)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
     # Generate OTP
     otp = generate_otp(user)
 
@@ -276,7 +302,14 @@ def request_otp(request):
     threading.Thread(target=_send_email_async, args=(user.email, otp.code), daemon=True).start()
 
     # Respond immediately so the client can show the OTP dialog without delay
-    return Response({"message": "OTP generated and email dispatch initiated"}, status=status.HTTP_200_OK)
+    response_payload = {
+        "message": "OTP generated and email dispatch initiated",
+        "to": user.email,
+        "backend": email_backend,
+    }
+    if not is_smtp_backend:
+        response_payload["note"] = "Using console email backend; OTP content is printed in server logs. Configure SMTP to send real emails."
+    return Response(response_payload, status=status.HTTP_200_OK)
 
 
 @api_view(["POST"])
