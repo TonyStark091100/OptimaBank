@@ -22,6 +22,9 @@ urlpatterns = [
     # Verify OTP
     path('verify-otp/', views.verify_otp, name='verify_otp'),
 
+    # Email diagnostics
+    path('email-health/', views.email_health, name='email_health'),
+
     # Account management
     path('delete-account/', views.delete_account, name='delete_account'),
     path('password-reset/request/', views.password_reset_request, name='password_reset_request'),

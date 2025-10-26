@@ -349,6 +349,67 @@ def verify_otp(request):
 
 
 # -------------------------
+# Email Health Check
+# -------------------------
+@api_view(["GET"])  # Safe, read-only diagnostic
+@permission_classes([AllowAny])
+@authentication_classes([])
+def email_health(request):
+    """Check SMTP configuration by attempting connection, STARTTLS, and login.
+    Returns diagnostic JSON to help debug OTP email delivery issues.
+    """
+    try:
+        email_backend = getattr(settings, 'EMAIL_BACKEND', '') or ''
+        is_smtp_backend = email_backend.endswith('smtp.EmailBackend')
+        host = getattr(settings, 'EMAIL_HOST', '')
+        port = int(getattr(settings, 'EMAIL_PORT', 0) or 0)
+        use_tls = getattr(settings, 'EMAIL_USE_TLS', False)
+        use_ssl = getattr(settings, 'EMAIL_USE_SSL', False)
+        user = getattr(settings, 'EMAIL_HOST_USER', None)
+        has_password = bool(getattr(settings, 'EMAIL_HOST_PASSWORD', None))
+
+        diagnostics = {
+            "backend": email_backend,
+            "is_smtp_backend": is_smtp_backend,
+            "host": host,
+            "port": port,
+            "use_tls": use_tls,
+            "use_ssl": use_ssl,
+            "has_user": bool(user),
+            "has_password": has_password,
+        }
+
+        if not is_smtp_backend:
+            diagnostics["status"] = "not_smtp"
+            diagnostics["message"] = "EMAIL_BACKEND is not SMTP. In this mode, OTP emails won't be delivered to inbox."
+            return Response(diagnostics, status=status.HTTP_200_OK)
+
+        # Perform connectivity + auth test
+        try:
+            if use_ssl:
+                server = smtplib.SMTP_SSL(host, port or 465, timeout=10, context=ssl.create_default_context())
+            else:
+                server = smtplib.SMTP(host, port or 587, timeout=10)
+                server.ehlo()
+                if use_tls:
+                    server.starttls(context=ssl.create_default_context())
+                    server.ehlo()
+            if user and has_password:
+                server.login(user, getattr(settings, 'EMAIL_HOST_PASSWORD'))
+            server.quit()
+            diagnostics["status"] = "ok"
+            diagnostics["message"] = "SMTP connectivity and login successful"
+            return Response(diagnostics, status=status.HTTP_200_OK)
+        except Exception as e:
+            diagnostics["status"] = "error"
+            diagnostics["error"] = f"SMTP test failed: {str(e)}"
+            return Response(diagnostics, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except Exception as e:
+        return Response({"status": "error", "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# -------------------------
 # Google Authentication
 # -------------------------
 @api_view(["POST"])
