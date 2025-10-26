@@ -79,54 +79,31 @@ const SignUpPage: React.FC<SignUpPageProps> = ({
       // First create the user account (skip navigation)
       await onSignUp(formData, true);
       
+      // Immediately show OTP prompt for better UX
+      setOtpSent(true);
+      
       // Then request OTP for the newly created user
       await onRequestOtp(formData.email);
-      setOtpSent(true);
+      onShowSnackbar('OTP sent to your email', 'success');
     } catch (err: any) {
       console.error(err);
       onShowSnackbar(`Failed to create account or send OTP: ${err.message || 'Please try again'}`, 'error');
     }
   };
 
-  // Verify OTP → Complete signup process
+  // Verify OTP → Complete signup process via App (to show biometric popup on mobile)
   const handleVerifyOtpHandler = async () => {
     try {
       if (!formData.email || !formData.password) {
         onShowSnackbar("Email and password are required", 'warning');
         return;
       }
-      
-      // Verify the OTP (skip navigation, we'll handle it ourselves)
-      await onVerifyOtp(formData.email, otp, true);
 
-      // After OTP verification, login the user using authApi
-      try {
-        // Import authApi (it should be available from the parent)
-        const { authApi } = await import('../services/api');
-        
-        // Use the proper login API
-        await authApi.login(formData.email, formData.password);
-        
-        // Tokens are already stored by authApi.login
-        console.log("Login successful after OTP verification");
-        
-        // Verify tokens are stored
-        const accessToken = localStorage.getItem('access_token');
-        if (!accessToken) {
-          console.error('No access token found after login');
-          onShowSnackbar("Login failed - no access token. Please try again.", 'error');
-          return;
-        }
-        
-        console.log('Tokens verified after signup login');
-      } catch (loginErr) {
-        console.error("Login error after OTP verification:", loginErr);
-        onShowSnackbar("Login failed after OTP verification. Please try again.", 'error');
-        return;
-      }
+      // Store temp password so App.tsx can perform login after OTP verification
+      localStorage.setItem('tempPassword', formData.password);
 
-      // Navigate to main page - biometric popup will be handled by App.tsx after OTP verification
-      navigate("/main");
+      // Let App.tsx handle OTP success flow, including biometric popup and navigation
+      await onVerifyOtp(formData.email, otp, false);
     } catch (err) {
       console.error(err);
       onShowSnackbar("Invalid OTP, try again!", 'error');
